@@ -12,12 +12,6 @@ export const SUBSYSTEMS = [
 //   Advice → Verification → Weighment → Unloading → Final Weighment → Material Receipt (GRN) → Gate-Out
 // `only` limits a module to one subsystem.
 export const MODULES = [
-  // Paperwork that comes BEFORE a truck: Sales Order (customer) / Purchase Indent (department → approval → PO).
-  { key: 'order', label: 'Sales Order', actions: ['view', 'create'], only: 'sales' },
-  { key: 'orderapproval', label: 'Order Approval', actions: ['view', 'action'], only: 'sales' },
-  { key: 'indent', label: 'Purchase Indent', actions: ['view', 'create'], only: 'purchase' },
-  { key: 'indentapproval', label: 'Indent Approval', actions: ['view', 'action'], only: 'purchase' },
-  { key: 'po', label: 'Purchase Order', actions: ['view', 'action'], only: 'purchase' },
   { key: 'inventory', label: 'Advice', actions: ['view', 'create', 'action'] },
   { key: 'gatein', label: 'Verification', actions: ['view', 'action'] },
   { key: 'weighin', label: 'Weighment', actions: ['view', 'action'] },
@@ -41,10 +35,8 @@ export const labelsFor = (sub) =>
     ? { act: 'Unloading', advice: 'Unloading Advice', party: 'Supplier', prefix: 'PUR', from: 'Supplier Location', to: 'Plant / Destination' }
     : { act: 'Loading', advice: 'Loading Advice', party: 'Customer', prefix: 'SLS', from: 'From (Plant)', to: 'Destination' };
 
-// A truck's actual purpose (Loading / Unloading) is chosen per-advice via a dropdown at
-// creation, independent of the Sales/Purchase subsystem it was created under (e.g. a
-// sales return can be an "Unloading" even though it lives in the Sales subsystem).
-// Falls back to the subsystem's default act for older records that have no `purpose`.
+// A truck's purpose follows its subsystem: Sales = Loading, Purchase = Unloading (no dropdown).
+// `purpose` is stored on each advice; older records without it fall back to the subsystem's act.
 export const actOf = (a) => (a.purpose === 'unloading' ? 'Unloading' : a.purpose === 'loading' ? 'Loading' : labelsFor(a.type).act);
 
 // Freight (bhada) terms. Sales: EX = party apni gaadi se uthata hai (bhada party ka),
@@ -80,11 +72,6 @@ export const userCan = (users, u, key, action = 'view') =>
 export const nameOf = (sub, key) => {
   const L = labelsFor(sub);
   return {
-    order: 'Sales Order',
-    orderapproval: 'Order Approval',
-    indent: 'Purchase Indent',
-    indentapproval: 'Indent Approval',
-    po: 'Purchase Order',
     inventory: L.advice,
     gatein: 'Gate In (Verification)',
     weighin: 'Weighment',
@@ -917,84 +904,3 @@ const RAW_ADVICES = [
 export const SEED_ADVICES = RAW_ADVICES.map(normalizeAdvice);
 // Bump whenever the demo trucks change, so browsers pick up the new set automatically.
 export const SEED_VERSION = 5;
-
-// ═══ Sales Orders & Purchase Indents (one list, `type` = subsystem) ═══
-// Sales Order status: 'pending' (Order Approval) | 'approved' | 'rejected'. Older orders with no status count as approved.
-export const soApproved = (o) => !o.status || o.status === 'approved';
-export const INDENT_STATUS = {
-  pending: { label: 'Pending Approval', tone: 'amber' },
-  approved: { label: 'Approved', tone: 'blue' },
-  po: { label: 'PO Created', tone: 'green' },
-  rejected: { label: 'Rejected', tone: 'gray' },
-};
-
-/** Ordered vs. advised vs. dispatched quantity of a Sales Order (advices are linked by orderRef = SO no.). */
-export function orderProgress(o, advices) {
-  const linked = advices.filter((a) => a.type === 'sales' && a.orderRef === o.no);
-  const plan = (a) => a.items.reduce((s, i) => s + Number(i.planQty || 0), 0);
-  const r = (n) => Math.round(n * 100) / 100;
-  const ordered = r(o.items.reduce((s, i) => s + Number(i.qty || 0), 0));
-  const planned = r(linked.reduce((s, a) => s + plan(a), 0));
-  const dispatched = r(linked.filter((a) => a.gateOut).reduce((s, a) => s + (a.billing?.qty ?? plan(a)), 0));
-  const status =
-    dispatched >= ordered && ordered > 0 ? 'Completed'
-      : dispatched > 0 ? 'Partly Dispatched'
-      : planned >= ordered && ordered > 0 ? 'Fully Planned'
-      : planned > 0 ? 'Partly Planned' : 'Open';
-  return { ordered, planned, dispatched, status, advices: linked };
-}
-
-const day = (d) => new Date(now + d * 86400000).toISOString().slice(0, 10);
-const SHREE = { party: 'Shree Steel Traders', address: 'Transport Nagar, Nagpur, MH', gst: '27ABCDE1234F1Z5' };
-const BALAJI = { party: 'Balaji Infra Pvt Ltd', address: 'Link Road, Bilaspur, CG', gst: '22AAACB5678K1Z2' };
-
-export const SEED_ORDERS = [
-  {
-    id: 'o1', type: 'sales', no: 'SO/26/118', date: day(-3), party: 'Shree Steel Traders', acName: 'Shree Steel Traders – Raipur',
-    custRef: 'SST/PO/771', salesPerson: 'Ramesh (Sales)', billingInfo: SHREE, shipTo: 'Nagpur, MH',
-    items: [
-      { desc: 'MS Square Tube', size: '40x40x2.0 mm', grade: 'YST-210', qty: 10, rate: 61500 },
-      { desc: 'MS Round Tube', size: '50 NB', grade: 'YST-240', qty: 8, rate: 61500 },
-    ],
-    freightTerms: 'for', deliveryDate: day(2), paymentTerms: '30 din credit', remarks: 'Mill test certificate required', by: 'Ramesh (Sales)',
-  },
-  {
-    id: 'o2', type: 'sales', no: 'SO/26/121', date: day(-2), party: 'Balaji Infra Pvt Ltd', acName: 'Balaji Infra – Bilaspur',
-    custRef: 'BIPL/4410', salesPerson: 'Ramesh (Sales)', billingInfo: BALAJI, shipTo: 'Bilaspur, CG',
-    items: [{ desc: 'MS Rectangular Tube', size: '60x40x2.5 mm', grade: 'YST-210', qty: 24, rate: 62000 }],
-    freightTerms: 'for', deliveryDate: day(5), paymentTerms: '50% advance', remarks: 'Do truck me bhejna hai', by: 'Ramesh (Sales)',
-  },
-  {
-    id: 'o3', type: 'sales', no: 'SO/26/140', date: day(0), party: 'Om Hardware', acName: 'Om Hardware – Durg',
-    custRef: '', salesPerson: 'Ramesh (Sales)', billingInfo: { party: 'Om Hardware', address: 'Station Road, Durg, CG', gst: '22AAHFO9988M1Z9' }, shipTo: 'Durg, CG',
-    items: [{ desc: 'MS Round Tube', size: '25 NB', grade: 'YST-240', qty: 12, rate: 60800 }],
-    freightTerms: 'ex', deliveryDate: day(4), paymentTerms: 'Against delivery', remarks: '', by: 'Ramesh (Sales)',
-    status: 'pending', // waiting in Order Approval
-  },
-  {
-    id: 'o4', type: 'sales', no: 'SO/26/040', date: day(-6), party: 'Shree Steel Traders', acName: 'Shree Steel Traders – Raipur',
-    custRef: 'SST/PO/702', salesPerson: 'Ramesh (Sales)', billingInfo: SHREE, shipTo: 'Nagpur, MH',
-    items: [{ desc: 'MS Square Tube', size: '40x40x2.0 mm', grade: 'YST-210', qty: 16, rate: 61200 }],
-    freightTerms: 'for', deliveryDate: day(-4), paymentTerms: '30 din credit', remarks: '', by: 'Ramesh (Sales)',
-  },
-
-  {
-    id: 'i1', type: 'purchase', no: 'IND/26/001', date: day(-5), dept: 'Production', by: 'Rakesh (Store)', requiredBy: day(1), priority: 'Urgent',
-    purpose: 'Tube mill line-2 ke liye coil', suggestedSupplier: 'Shyam Steel Industries',
-    items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', qty: 20 }],
-    status: 'po', approval: { by: 'Admin', time: iso(5000), remark: 'OK' },
-    po: { no: 'PO/26/052', supplier: 'Shyam Steel Industries', acName: 'Shyam Steel – Durgapur', rate: 53700, freightTerms: 'for', by: 'Admin', time: iso(4800) },
-  },
-  {
-    id: 'i2', type: 'purchase', no: 'IND/26/002', date: day(-2), dept: 'Production', by: 'Rakesh (Store)', requiredBy: day(4), priority: 'Normal',
-    purpose: 'Next week ka stock', suggestedSupplier: 'Jindal Coils Ltd',
-    items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', qty: 25 }],
-    status: 'approved', approval: { by: 'Admin', time: iso(1500), remark: 'Rate compare karke PO do' },
-  },
-  {
-    id: 'i3', type: 'purchase', no: 'IND/26/003', date: day(0), dept: 'Maintenance', by: 'Rakesh (Store)', requiredBy: day(3), priority: 'Normal',
-    purpose: 'Packing ke liye strap', suggestedSupplier: '',
-    items: [{ desc: 'MS Packing Strap', size: '32 mm', grade: '', qty: 1.5 }],
-    status: 'pending',
-  },
-];
