@@ -5,12 +5,12 @@ import { STAGES, SUBSYSTEMS, actOf, moduleAt, slugOf, stageLabel, stagesFor } fr
 import { Badge, Empty, fmtDT, plannedTotal } from '../components/ui.jsx';
 
 const ACTION_TEXT = (a) => ({
-  CREATED: 'Security check karke gate-in karna hai', GATED_IN: '1st weight lena hai', TARE_DONE: `${actOf(a)} karni hai`,
-  LOADED: 'Final weight lena hai',
-  FINAL_DONE: a.type === 'purchase' ? 'Material receipt (GRN) karna hai' : 'Billing & tax invoice banana hai',
-  BILLED: 'Documents verify karne hain', DOC_OK: 'Gate pass generate karna hai',
-  GATEPASS: 'Security clearance dena hai',
-  CLEARED: a.type === 'purchase' ? 'Khaali gaadi gate-out karni hai' : 'Gate-out record karna hai',
+  CREATED: 'Complete security check and Gate-In', GATED_IN: 'Record 1st weight', TARE_DONE: `Start ${actOf(a)}`,
+  LOADED: 'Record final weight',
+  FINAL_DONE: a.type === 'purchase' ? 'Create material receipt (GRN)' : 'Create billing & tax invoice',
+  BILLED: 'Verify documents', DOC_OK: 'Generate gate pass',
+  GATEPASS: 'Give security clearance',
+  CLEARED: a.type === 'purchase' ? 'Gate-Out the empty vehicle' : 'Record Gate-Out',
 }[a.stage]);
 const INSIDE = ['GATED_IN', 'TARE_DONE', 'LOADED', 'FINAL_DONE', 'BILLED', 'DOC_OK', 'GATEPASS', 'CLEARED'];
 
@@ -76,8 +76,8 @@ function Charts({ adv, visibleSubs }) {
   const done = adv.filter((a) => a.stage === 'OUT').length;
   const inside = adv.length - waiting - done;
   const parts = [
-    { label: 'Gate-In ka wait', value: waiting, color: STATUS_COLORS.wait },
-    { label: 'Plant ke andar', value: inside, color: STATUS_COLORS.inside },
+    { label: 'Waiting for Gate-In', value: waiting, color: STATUS_COLORS.wait },
+    { label: 'Inside plant', value: inside, color: STATUS_COLORS.inside },
     { label: 'Complete (gate-out)', value: done, color: STATUS_COLORS.done },
   ];
 
@@ -92,7 +92,7 @@ function Charts({ adv, visibleSubs }) {
     <div className="chart-cols">
       <div className="card">
         <div className="card-title"><h3>Truck status</h3><span className="muted">{adv.length} trucks</span></div>
-        {adv.length === 0 ? <Empty text="Abhi koi truck nahi." /> : (
+        {adv.length === 0 ? <Empty text="No trucks right now." /> : (
           <div className="donut-wrap">
             <Donut parts={parts} total={adv.length} centerLabel="trucks" />
             <Legend items={parts.map((p) => ({ ...p, value: `${p.value} · ${Math.round((p.value / adv.length) * 100)}%` }))} />
@@ -101,15 +101,15 @@ function Charts({ adv, visibleSubs }) {
       </div>
 
       <div className="card">
-        <div className="card-title"><h3>Sales vs Purchase</h3><span className="muted">status ke hisaab se</span></div>
-        {visibleSubs.length === 0 ? <Empty text="Koi data nahi." /> : (
+        <div className="card-title"><h3>Sales vs Purchase</h3><span className="muted">by status</span></div>
+        {visibleSubs.length === 0 ? <Empty text="No data available." /> : (
           <>
             <div className="hbars">
               {visibleSubs.map((s) => {
                 const l = adv.filter((a) => a.type === s.key);
                 const seg = [
-                  [l.filter((a) => a.stage === 'CREATED').length, STATUS_COLORS.wait, 'Gate-In ka wait'],
-                  [l.filter((a) => a.stage !== 'CREATED' && a.stage !== 'OUT').length, STATUS_COLORS.inside, 'Plant ke andar'],
+                  [l.filter((a) => a.stage === 'CREATED').length, STATUS_COLORS.wait, 'Waiting for Gate-In'],
+                  [l.filter((a) => a.stage !== 'CREATED' && a.stage !== 'OUT').length, STATUS_COLORS.inside, 'Inside plant'],
                   [l.filter((a) => a.stage === 'OUT').length, STATUS_COLORS.done, 'Complete'],
                 ];
                 return (
@@ -132,18 +132,18 @@ function Charts({ adv, visibleSubs }) {
 
       <div className="card">
         <div className="card-title"><h3>Loading / Unloading time</h3><span className="muted">{ended.length} complete</span></div>
-        {ended.length === 0 ? <Empty text="Abhi koi loading/unloading complete nahi hui." /> : (
+        {ended.length === 0 ? <Empty text="No loading/unloading completed yet." /> : (
           <>
-            <div className="big-num"><b>{pctOn}%</b><span>trucks time par complete hue</span></div>
+            <div className="big-num"><b>{pctOn}%</b><span>trucks completed on time</span></div>
             <div className="hb-track tall">
-              {onTime > 0 && <i style={{ flex: onTime, background: STATUS_COLORS.done }} title={`Time par: ${onTime}`}>{onTime}</i>}
+              {onTime > 0 && <i style={{ flex: onTime, background: STATUS_COLORS.done }} title={`On time: ${onTime}`}>{onTime}</i>}
               {late.length > 0 && <i style={{ flex: late.length, background: '#b91c1c' }} title={`Delay: ${late.length}`}>{late.length}</i>}
             </div>
             <Legend items={[
-              { label: 'Time par', value: onTime, color: STATUS_COLORS.done },
-              { label: 'Delay hua', value: late.length, color: '#b91c1c' },
+              { label: 'On time', value: onTime, color: STATUS_COLORS.done },
+              { label: 'Delayed', value: late.length, color: '#b91c1c' },
             ]} />
-            {late.length > 0 && <p className="muted" style={{ marginTop: 8 }}>Delay wale trucks me average delay: <b>{avgDelay} min</b></p>}
+            {late.length > 0 && <p className="muted" style={{ marginTop: 8 }}>Average delay for delayed trucks: <b>{avgDelay} min</b></p>}
           </>
         )}
       </div>
@@ -208,15 +208,15 @@ export default function Dashboard() {
   const events = [];
   adv.forEach((a) => {
     const add = (t, text, by) => t && events.push({ t, text, by, a });
-    add(a.date, 'Advice create hui', '');
-    add(a.gateIn?.time, 'Gate-In hua', a.gateIn?.by);
-    add(a.tare?.time, '1st weight liya', a.tare?.by);
+    add(a.date, 'Advice created', '');
+    add(a.gateIn?.time, 'Gate-In done', a.gateIn?.by);
+    add(a.tare?.time, '1st weight recorded', a.tare?.by);
     add(a.loading?.end, `${actOf(a)} complete`, a.loading?.endBy || a.loading?.by);
-    add(a.final?.time, 'Final weight liya', a.final?.by);
+    add(a.final?.time, 'Final weight recorded', a.final?.by);
     add(a.billing?.time, `Billing done · Invoice ${a.billing?.invoiceNo}`, a.billing?.by);
     add(a.dispatch?.time, `Dispatch OK · ${a.dispatch?.gatePassNo}`, a.dispatch?.by);
     add(a.grn?.time, `GRN · ${a.grn?.grnNo}`, a.grn?.by);
-    add(a.gateOut?.time, 'Gate-Out hua', a.gateOut?.by);
+    add(a.gateOut?.time, 'Gate-Out done', a.gateOut?.by);
   });
   events.sort((x, y) => new Date(y.t) - new Date(x.t));
 
@@ -228,20 +228,20 @@ export default function Dashboard() {
       <div className="hello">
         <div>
           <h1>{greet}, {user.name.split(' ')[0]}</h1>
-          <p>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · aapke access ke hisaab se plant ka status</p>
+          <p>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · plant status based on your access</p>
         </div>
       </div>
 
       {visibleSubs.length === 0 && (
-        <div className="alert">Abhi aapko kisi subsystem (Sales / Purchase) ka access nahi mila hai. Admin se Master → Permissions me access maangein.</div>
+        <div className="alert">You do not have access to any subsystem (Sales / Purchase) yet. Ask the admin to grant access in Master → Permissions.</div>
       )}
 
       <div className="kpis">
         <Kpi icon={KPI_ICON.total} label="Total trucks" value={adv.length} note={visibleSubs.map((s) => `${adv.filter((a) => a.type === s.key).length} ${s.label.toLowerCase()}`).join(' · ') || '—'} />
-        <Kpi icon={KPI_ICON.wait} label="Gate-In ka wait" value={waiting.length} note="advice bani, truck aana baaki" tone="gray" />
-        <Kpi icon={KPI_ICON.inside} label="Abhi plant ke andar" value={inside.length} note="gate-in ho chuke, gate-out baaki" tone="amber" />
-        <Kpi icon={KPI_ICON.done} label="Dispatch complete" value={done.length} note="gate-out ho gaya" tone="green" />
-        <Kpi icon={KPI_ICON.qty} label="In process qty" value={inProcessMT} unit=" MT" note="planned, abhi tak bahar nahi gaya" tone="blue" />
+        <Kpi icon={KPI_ICON.wait} label="Waiting for Gate-In" value={waiting.length} note="advice created, truck yet to arrive" tone="gray" />
+        <Kpi icon={KPI_ICON.inside} label="Currently inside plant" value={inside.length} note="Gate-In done, Gate-Out pending" tone="amber" />
+        <Kpi icon={KPI_ICON.done} label="Dispatch complete" value={done.length} note="Gate-Out completed" tone="green" />
+        <Kpi icon={KPI_ICON.qty} label="In process qty" value={inProcessMT} unit=" MT" note="planned, not yet dispatched" tone="blue" />
       </div>
 
       {adv.length > 0 && <Charts adv={adv} visibleSubs={visibleSubs} />}
@@ -249,11 +249,11 @@ export default function Dashboard() {
       <div className="dash-cols">
         <div className="card">
           <div className="card-title">
-            <h3>Mera pending kaam</h3>
+            <h3>My pending tasks</h3>
             <span className={`pill ${mine.length ? 'hot' : ''}`}>{mine.length}</span>
           </div>
           {mine.length === 0 ? (
-            <Empty text="Aapke liye koi pending kaam nahi hai." />
+            <Empty text="You have no pending tasks." />
           ) : (
             <ul className="work">
               {mine.map((a) => (
@@ -273,7 +273,7 @@ export default function Dashboard() {
 
         <div className="card">
           <div className="card-title"><h3>Recent activity</h3></div>
-          {events.length === 0 ? <Empty text="Abhi koi activity nahi." /> : (
+          {events.length === 0 ? <Empty text="No recent activity." /> : (
             <ul className="feed">
               {events.slice(0, 8).map((e, i) => (
                 <li key={i}>
@@ -296,10 +296,10 @@ export default function Dashboard() {
       </div>
 
       <div className="card">
-        <div className="card-title"><h3>Plant ke andar ke trucks</h3><span className="muted">{inside.length} trucks</span></div>
-        {inside.length === 0 ? <Empty text="Abhi plant me koi truck nahi hai." /> : (
+        <div className="card-title"><h3>Trucks inside plant</h3><span className="muted">{inside.length} trucks</span></div>
+        {inside.length === 0 ? <Empty text="No trucks inside the plant." /> : (
           <table className="tbl">
-            <thead><tr><th>Truck</th><th>Advice</th><th>Party</th><th>Route</th><th>Status</th><th>Andar kab se</th></tr></thead>
+            <thead><tr><th>Truck</th><th>Advice</th><th>Party</th><th>Route</th><th>Status</th><th>Inside for</th></tr></thead>
             <tbody>
               {inside.map((a) => (
                 <tr key={a.id} className={`tone-row-${STAGES[a.stage].tone}`}>

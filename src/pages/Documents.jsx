@@ -30,9 +30,9 @@ export function BiltyPage({ sub }) {
   const lr = (x) => biltyOf(x) || 'Pending';
   return (
     <>
-      <PageHead title="Sales · Bilty / LR" sub="Gate Pass ke saath bilty number generate hota hai; Security Clearance par ye match kiya jaata hai." />
+      <PageHead title="Sales · Bilty / LR" sub="The Bilty number is generated with the Gate Pass and matched at Security Clearance." />
       <div className="card">
-        {rows.length === 0 ? <Empty text="Koi bilty nahi." /> : (
+        {rows.length === 0 ? <Empty text="No bilty records." /> : (
           <table className="tbl">
             <thead><tr><th>LR No.</th><th>Date</th><th>Transporter</th><th>Truck</th><th>Route</th><th>Freight</th><th /></tr></thead>
             <tbody>

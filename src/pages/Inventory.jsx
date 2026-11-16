@@ -12,7 +12,7 @@ const blank = (sub) => ({
   items: [{ ...emptyItem }],
   remarks: { special: '', customer: '', packing: '', handling: '' },
   targetHours: 2, freight: '',
-  // Sales default FOR (hum pahunchate hain); Purchase default FOR (supplier pahunchata hai)
+  // Sales defaults to FOR (we deliver); Purchase defaults to FOR (supplier delivers)
   freightTerms: 'for',
 });
 
@@ -31,12 +31,12 @@ export function InventoryPage({ sub }) {
     <>
       <PageHead
         title={`${sub === 'sales' ? 'Sales' : 'Purchase'} · ${L.advice}`}
-        sub={sub === 'purchase' ? `${L.advice} banao – supplier ki Bilty (LR) Gate-In par record hogi.` : `${L.advice} banao – Bilty (LR) number Dispatch OK ke time banega.`}
+        sub={sub === 'purchase' ? `Create a ${L.advice}. The supplier's Bilty (LR) is recorded at Gate-In.` : `Create a ${L.advice}. The Bilty (LR) number is generated at Dispatch OK.`}
         right={can(sub, 'inventory', 'create') && <button className="btn primary" onClick={() => setCreating(true)}>+ Create {L.advice}</button>}
       />
       <div className="card">
         <div className="toolbar"><input placeholder="Search advice / party / truck / transporter…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        {rows.length === 0 ? <Empty text="Koi record nahi mila." /> : (
+        {rows.length === 0 ? <Empty text="No records found." /> : (
           <table className="tbl">
             <thead><tr><th>Advice</th><th>{L.party}</th><th>Material</th><th>Plan Qty</th><th>Truck</th><th>Transporter</th><th>Bilty</th><th>Status</th><th /></tr></thead>
             <tbody>
@@ -112,7 +112,7 @@ function CreateModal({ sub, onClose }) {
   const save = () => {
     const advice = createAdvice(sub, {
       ...f, rate: Number(f.rate) || 0, reqQty: Number(f.reqQty) || 0,
-      // bhada amount sirf tab jab uska kharcha hamare side ho
+      // freight amount applies only when the freight cost is on our side
       freight: weBear ? Number(f.freight) || 0 : 0,
       items: f.items.map((i) => ({ ...i, reqQty: Number(i.reqQty) || 0, planQty: Number(i.planQty) || 0 })),
     });
@@ -129,7 +129,7 @@ function CreateModal({ sub, onClose }) {
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={save}>Create Advice</button></>}>
       <h4>Truck Purpose</h4>
       <div className="form-grid">
-        <Field label="Truck aaya hai kis liye? *" hint="Default subsystem ke hisaab se hai, zaroorat ho to badal sakte ho">
+        <Field label="Purpose of the truck visit *" hint="Set by default for this module; change it if needed">
           <select value={f.purpose} onChange={(e) => set('purpose', e.target.value)}>
             <option value="loading">Loading</option>
             <option value="unloading">Unloading</option>
@@ -139,10 +139,10 @@ function CreateModal({ sub, onClose }) {
 
       <h4>1. {L.party} Details</h4>
       <div className="form-grid">
-        <Field label={sub === 'purchase' ? 'PO (Indent) se bharo' : 'Sales Order se bharo'} span={2}
-          hint={sources.length ? 'Chunte hi party, items, rate aur billing bhar jayenge – baad me badal sakte ho' : sub === 'purchase' ? 'Abhi koi indent PO tak nahi pahuncha' : 'Abhi koi Sales Order nahi hai'}>
+        <Field label={sub === 'purchase' ? 'Fill from PO (Indent)' : 'Fill from Sales Order'} span={2}
+          hint={sources.length ? 'Party, items, rate and billing are filled in on selection – you can edit them later' : sub === 'purchase' ? 'No indent has reached PO stage yet' : 'No Sales Order available yet'}>
           <select value={sources.some((x) => x.ref === f.orderRef) ? f.orderRef : ''} onChange={(e) => pickOrder(e.target.value)} disabled={!sources.length}>
-            <option value="">— Haath se bharo —</option>
+            <option value="">— Enter manually —</option>
             {sources.map((x) => <option key={x.ref} value={x.ref}>{x.label}</option>)}
           </select>
         </Field>
@@ -169,15 +169,15 @@ function CreateModal({ sub, onClose }) {
         {I('Driver Mobile', f.transport.mobile, (v) => nest('transport', 'mobile', v))}
         {I(L.from, f.transport.from, (v) => nest('transport', 'from', v))}
         {I(L.to, f.transport.to, (v) => nest('transport', 'to', v))}
-        <Field label="Freight Terms (EX / FOR) *" hint={weBear ? 'Bhada hamare side – amount neeche daalo' : 'Bhada dusri party ka – invoice/bilty me amount nahi judega'}>
+        <Field label="Freight Terms (EX / FOR) *" hint={weBear ? 'Freight is on our side – enter the amount below' : 'Freight is paid by the other party – amount is not added to the invoice / Bilty'}>
           <select value={f.freightTerms} onChange={(e) => set('freightTerms', e.target.value)}>
             <option value="ex">{termsText(sub, 'ex')}</option>
             <option value="for">{termsText(sub, 'for')}</option>
           </select>
         </Field>
         {weBear
-          ? I('Freight / Bhada (₹)', f.freight, (v) => set('freight', v), { type: 'number' })
-          : <Field label="Freight / Bhada (₹)"><input value="Dusri party ka – nahi bharna" disabled /></Field>}
+          ? I('Freight (₹)', f.freight, (v) => set('freight', v), { type: 'number' })
+          : <Field label="Freight (₹)"><input value="Paid by the other party – not required" disabled /></Field>}
         {I(`Target ${act} time (hours)`, f.targetHours, (v) => set('targetHours', v), { type: 'number', step: '0.5' })}
       </div>
 

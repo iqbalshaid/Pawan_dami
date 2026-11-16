@@ -8,11 +8,11 @@ import { actOf, afterStage, labelsFor, termsOf, termsText, userCan, weBearFreigh
 const nowISO = () => new Date().toISOString();
 
 // Sales truck comes empty and leaves loaded; Purchase truck comes loaded and leaves empty.
-// Either way net maal = difference of the two weighments.
+// Either way net material = difference of the two weighments.
 const weightName = (sub, which) =>
   sub === 'purchase'
-    ? which === 'first' ? '1st Weight – Bhari gaadi (loaded)' : 'Final Weight – Khaali gaadi (empty)'
-    : which === 'first' ? '1st Weight – Khaali gaadi (empty / tare)' : 'Final Weight – Bhari gaadi (loaded)';
+    ? which === 'first' ? '1st Weight – Loaded vehicle' : 'Final Weight – Empty vehicle'
+    : which === 'first' ? '1st Weight – Empty vehicle (tare)' : 'Final Weight – Loaded vehicle';
 const rs = (v) => '₹ ' + Math.round(v || 0).toLocaleString('en-IN');
 
 /** Dropdown of incharges who have action permission on this module (defaults to logged-in user). */
@@ -23,7 +23,7 @@ function useIncharge(sub, module) {
   const name = list.find((u) => u.id === id)?.name || user.name;
   const field = (
     <div className="form-grid">
-      <Field label="Incharge (kaun kar raha hai) *">
+      <Field label="Incharge (person doing this step) *">
         <select value={id} onChange={(e) => setId(e.target.value)}>
           {list.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
@@ -71,12 +71,12 @@ function GateInForm({ a, sub, done }) {
     <>
       {purchase && (
         <>
-          <h4>Supplier ki Bilty / Documents (driver jo laya hai)</h4>
+          <h4>Supplier Bilty / Documents (brought by driver)</h4>
           <div className="form-grid">
-            <Field label={`Bilty / LR No.${lrRequired ? ' *' : ''}`} hint={lrRequired ? 'Ex-Works – bhada hamara hai, LR zaroori' : 'FOR – bhada supplier ka, LR optional'}>
-              <input value={doc.biltyNo} onChange={set('biltyNo')} placeholder="Driver ki bilty ka number" />
+            <Field label={`Bilty / LR No.${lrRequired ? ' *' : ''}`} hint={lrRequired ? 'Ex-Works – freight is ours, LR required' : 'FOR – supplier pays freight, LR optional'}>
+              <input value={doc.biltyNo} onChange={set('biltyNo')} placeholder="Bilty number from driver" />
             </Field>
-            <Field label="Bilty ki photo (optional)"><PhotoInput value={doc.biltyPhoto} onChange={(v) => setDoc((d) => ({ ...d, biltyPhoto: v }))} /></Field>
+            <Field label="Bilty photo (optional)"><PhotoInput value={doc.biltyPhoto} onChange={(v) => setDoc((d) => ({ ...d, biltyPhoto: v }))} /></Field>
             <Field label="Supplier Invoice No."><input value={doc.invoiceNo} onChange={set('invoiceNo')} /></Field>
             <Field label="E-Way Bill No."><input value={doc.ewayBill} onChange={set('ewayBill')} /></Field>
           </div>
@@ -85,14 +85,14 @@ function GateInForm({ a, sub, done }) {
       {whoField}
       <h4>Security shall verify</h4>
       <Checks items={GATE_IN_CHECKS} state={c} setState={setC} />
-      <button className="btn primary" disabled={!ok} onClick={save}>Gate-In karo → Weighment ko bhejo</button>
+      <button className="btn primary" disabled={!ok} onClick={save}>Record Gate-In → Send to Weighment</button>
     </>
   );
 }
 
 /** Read-only record once Gate-In is done – kept visible on every later stage. */
 function GateInHistory({ a }) {
-  if (!a.gateIn) return <div className="alert">Is truck ka Gate-In abhi nahi hua.</div>;
+  if (!a.gateIn) return <div className="alert">Gate-In is not done for this truck yet.</div>;
   return (
     <>
       <h4>Gate-In History</h4>
@@ -108,7 +108,7 @@ function GateInHistory({ a }) {
       </tbody></table>
       {a.gateIn.biltyPhoto && (
         <>
-          <h4>Bilty ki photo</h4>
+          <h4>Bilty photo</h4>
           <img src={a.gateIn.biltyPhoto} alt="Bilty" style={{ maxWidth: 280, borderRadius: 6, border: '1px solid #e3e8ef' }} />
         </>
       )}
@@ -153,7 +153,7 @@ function WeightForm({ a, sub, done, mode }) {
     <>
       <h4>{weightName(a.type, first ? 'first' : 'final')}</h4>
       {whoField}
-      {!first && <div className="muted">{weightName(a.type, 'first')}: <b>{a.tare?.method === 'photo' ? 'Slip photo me' : kg(tare)}</b></div>}
+      {!first && <div className="muted">{weightName(a.type, 'first')}: <b>{a.tare?.method === 'photo' ? 'In slip photo' : kg(tare)}</b></div>}
 
       <div className="seg">
         <button type="button" className={!manual ? 'on' : ''} onClick={() => setMethod('photo')}>📷 Photo upload</button>
@@ -163,7 +163,7 @@ function WeightForm({ a, sub, done, mode }) {
       {manual ? (
         <div className="form-grid">
           <Field label="Weight (kg) *"><input type="number" value={w} onChange={(e) => setW(e.target.value)} placeholder="Manual weight" /></Field>
-          <Field label="Remark * (manual kyun kiya)"><input value={remark} onChange={(e) => setRemark(e.target.value)} /></Field>
+          <Field label="Remark * (reason for manual entry)"><input value={remark} onChange={(e) => setRemark(e.target.value)} /></Field>
         </div>
       ) : (
         <div className="form-grid">
@@ -173,11 +173,11 @@ function WeightForm({ a, sub, done, mode }) {
 
       {net != null && (
         <div className={`alert ${planned && Math.abs(net - planned) > planned * 0.02 ? 'warn' : 'ok'}`}>
-          {a.type === 'purchase' ? 'Net aaya hua maal' : 'Net weight'}: <b>{kg(net)}</b> {planned ? `· ${a.type === 'purchase' ? 'Mangaya hua' : 'Planned'} ${kg(planned)}` : ''}
+          {a.type === 'purchase' ? 'Net material received' : 'Net weight'}: <b>{kg(net)}</b> {planned ? `· ${a.type === 'purchase' ? 'Ordered' : 'Planned'} ${kg(planned)}` : ''}
         </div>
       )}
       <button className="btn primary" disabled={!valid} onClick={submit}>
-        {first ? 'Save → Loading / Unloading Yard bhejo' : a.type === 'purchase' ? 'Save → Material Receipt (GRN) ko bhejo' : 'Save → Billing ko bhejo'}
+        {first ? 'Save → Send to Loading / Unloading Yard' : a.type === 'purchase' ? 'Save → Send to Material Receipt (GRN)' : 'Save → Send to Billing'}
       </button>
     </>
   );
@@ -186,13 +186,13 @@ function WeightForm({ a, sub, done, mode }) {
 /** Read-only record of a weighment – kept visible on every later stage. */
 function WeightHistory({ a, mode }) {
   const r = mode === 'first' ? a.tare : a.final;
-  if (!r) return <div className="alert">Ye weighment abhi nahi hui.</div>;
+  if (!r) return <div className="alert">This weighment is not done yet.</div>;
   return (
     <>
       <h4>{weightName(a.type, mode)} – History</h4>
       <table className="kvt"><tbody>
         <tr><th>Method</th><td>{r.method === 'photo' ? 'Slip photo' : 'Manual entry'}</td></tr>
-        <tr><th>Weight</th><td>{r.method === 'photo' ? 'Slip photo me (neeche dekho)' : kg(r.weight)}</td></tr>
+        <tr><th>Weight</th><td>{r.method === 'photo' ? 'In slip photo (see below)' : kg(r.weight)}</td></tr>
         <tr><th>Time</th><td>{fmtDT(r.time)} · {r.by}</td></tr>
         {r.remark && <tr><th>Remark</th><td>{r.remark}</td></tr>}
         {mode === 'final' && netOf(a) != null && <tr><th>Net Weight</th><td>{netText(a)}</td></tr>}
@@ -206,7 +206,7 @@ export function WeighmentPage({ sub }) {
   return (
     <StagePage
       sub={sub} module="weighin" title="Weighment"
-      subtitle={`${weightName(sub, 'first')} – Weighbridge (Kata). Slip photo upload karo ya weight manually daalo.`}
+      subtitle={`${weightName(sub, 'first')} – Weighbridge. Upload the slip photo or enter the weight manually.`}
       tabs={[
         { key: 'first', label: 'Weighment Pending', stages: ['GATED_IN'], title: 'First Weighment & Yard Movement', Form: (p) => <WeightForm {...p} mode="first" /> },
         { key: 'history', label: 'History', stages: afterStage('GATED_IN'), title: '1st Weighment History', Form: (p) => <WeightHistory {...p} mode="first" />, readOnly: true },
@@ -219,7 +219,7 @@ export function FinalWeighmentPage({ sub }) {
   return (
     <StagePage
       sub={sub} module="weighout" title="Final Weighment"
-      subtitle={`${sub === 'purchase' ? 'Unloading ke baad' : 'Loading ke baad'} ka ${weightName(sub, 'final')} – Weighbridge (Kata). Dono weight ka farak = net maal.`}
+      subtitle={`${sub === 'purchase' ? 'After unloading' : 'After loading'}: ${weightName(sub, 'final')} – Weighbridge. Difference of the two weights = net material.`}
       tabs={[
         { key: 'final', label: 'Final Weighment Pending', stages: ['LOADED'], title: 'Final Weighment', Form: (p) => <WeightForm {...p} mode="final" /> },
         { key: 'history', label: 'History', stages: afterStage('LOADED'), title: 'Final Weighment History', Form: (p) => <WeightHistory {...p} mode="final" />, readOnly: true },
@@ -249,12 +249,12 @@ function LoadForm({ a, sub, done }) {
   if (!started) {
     return (
       <>
-        <div className="alert info">Target: <b>{a.targetHours} hours</b> me {act.toLowerCase()} complete karna hai · 1st weight: {a.tare?.method === 'photo' ? 'slip photo me' : kg(a.tare?.weight)}</div>
+        <div className="alert info">Target: <b>{a.targetHours} hours</b> to complete {act.toLowerCase()} · 1st weight: {a.tare?.method === 'photo' ? 'in slip photo' : kg(a.tare?.weight)}</div>
         {whoField}
         <button className="btn primary" onClick={() => {
           updateAdvice(a.id, { loading: { start: nowISO(), by: who } });
         }}>
-          ▶ {act} start karo (abhi ka time record hoga)
+          ▶ Start {act} (current time will be recorded)
         </button>
       </>
     );
@@ -265,13 +265,13 @@ function LoadForm({ a, sub, done }) {
   const delayText = `${Math.floor(delayMin / 60) ? Math.floor(delayMin / 60) + ' hr ' : ''}${delayMin % 60} min`;
   return (
     <>
-      <div className="alert ok">{act} shuru hua: <b>{fmtDT(started)}</b> ({a.loading?.by})</div>
+      <div className="alert ok">{act} started: <b>{fmtDT(started)}</b> ({a.loading?.by})</div>
       {whoField}
       {delayMin > 0 && (
         <>
-          <div className="alert danger">Ab tak Delay: <b>{delayText}</b> (target {a.targetHours} hrs)</div>
+          <div className="alert danger">Delay so far: <b>{delayText}</b> (target {a.targetHours} hrs)</div>
           <div className="form-grid">
-            <Field label="Delay hone ka reason *" span={2}><textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+            <Field label="Reason for delay *" span={2}><textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
           </div>
         </>
       )}
@@ -279,7 +279,7 @@ function LoadForm({ a, sub, done }) {
         Actual {act.toLowerCase()} items
         {!editing && <button className="btn sm" onClick={() => setEditing(true)}>✎ Edit items</button>}
       </h4>
-      <p className="muted">Plan se zyada / kam {act.toLowerCase()} hua ya koi aur item {act === 'Loading' ? 'load' : 'unload'} hua to "Edit items" dabao.</p>
+      <p className="muted">If the quantity {act === 'Loading' ? 'loaded' : 'unloaded'} differs from the plan, or another item was {act === 'Loading' ? 'loaded' : 'unloaded'}, click "Edit items".</p>
       <table className="tbl mini">
         <thead><tr><th>Item</th><th>Size</th><th>Grade</th><th>Plan (MT)</th><th>Actual (MT)</th><th /></tr></thead>
         <tbody>
@@ -306,13 +306,13 @@ function LoadForm({ a, sub, done }) {
       </table>
       {editing && (
         <button className="btn sm" onClick={() => setItems((s) => [...s, { desc: '', size: '', grade: '', reqQty: 0, planQty: 0, loadQty: '', extra: true }])}>
-          + Aur item add karo
+          + Add another item
         </button>
       )}
       {changed && (
         <div className="form-grid">
-          <Field label="Plan se badlav ka reason *" span={2}>
-            <input value={changeNote} placeholder="e.g. Party ne phone par 2 MT extra bola / stock kam tha" onChange={(e) => setChangeNote(e.target.value)} />
+          <Field label="Reason for change from plan *" span={2}>
+            <input value={changeNote} placeholder="e.g. Party asked for 2 MT extra by phone / stock was low" onChange={(e) => setChangeNote(e.target.value)} />
           </Field>
         </div>
       )}
@@ -328,7 +328,7 @@ function LoadForm({ a, sub, done }) {
         });
         done();
       }}>
-        ■ {act} end karo (abhi ka time record hoga) → Final Weighment ko bhejo
+        ■ End {act} (current time will be recorded) → Send to Final Weighment
       </button>
     </>
   );
@@ -337,7 +337,7 @@ function LoadForm({ a, sub, done }) {
 /** Read-only record once loading/unloading has ended – kept visible on every later stage. */
 function LoadingHistory({ a }) {
   const act = actOf(a);
-  if (!a.loading?.end) return <div className="alert">Is truck ki {act.toLowerCase()} abhi complete nahi hui.</div>;
+  if (!a.loading?.end) return <div className="alert">{act} is not complete for this truck yet.</div>;
   const hrs = (new Date(a.loading.end) - new Date(a.loading.start)) / 3600000;
   return (
     <>
@@ -346,9 +346,9 @@ function LoadingHistory({ a }) {
         <tr><th>Start</th><td>{fmtDT(a.loading.start)} · {a.loading.by}</td></tr>
         <tr><th>End</th><td>{fmtDT(a.loading.end)} · {a.loading.endBy || a.loading.by}</td></tr>
         <tr><th>Total time</th><td>{hrs.toFixed(1)} hrs (target {a.targetHours} hrs)</td></tr>
-        <tr><th>Delay</th><td>{a.loading.delayMin > 0 ? <span className="tone-red">{a.loading.delayMin} min – {a.loading.delayReason}</span> : 'Koi delay nahi'}</td></tr>
+        <tr><th>Delay</th><td>{a.loading.delayMin > 0 ? <span className="tone-red">{a.loading.delayMin} min – {a.loading.delayReason}</span> : 'No delay'}</td></tr>
         <tr><th>Qty</th><td>Plan {plannedTotal(a)} MT → Actual {loadedTotal(a)} MT</td></tr>
-        {a.loading.changeNote && <tr><th>Item badlav</th><td><span className="tone-amber">{a.loading.changeNote}</span></td></tr>}
+        {a.loading.changeNote && <tr><th>Item change</th><td><span className="tone-amber">{a.loading.changeNote}</span></td></tr>}
       </tbody></table>
       {a.items.some((i) => i.extra || (i.loadQty != null && Number(i.loadQty) !== Number(i.planQty))) && (
         <table className="tbl mini">
@@ -372,7 +372,7 @@ export function LoadingPage({ sub }) {
   const started = (a) => !!a.loading?.start;
   return (
     <StagePage
-      sub={sub} module="loading" title={L.act} subtitle={`${L.act} Supervisor – truck me kya ${L.act.toLowerCase()} karna hai aur kitne hours me.`}
+      sub={sub} module="loading" title={L.act} subtitle={`${L.act} Supervisor – what to ${L.act.toLowerCase()} on the truck and the target hours.`}
       tabs={[
         {
           key: 'start', label: `${L.act} Start Pending`, stages: ['TARE_DONE'], filter: (a) => !started(a),
@@ -404,7 +404,7 @@ function BillingForm({ a, sub, done }) {
   const [who, whoField] = useIncharge(sub, 'billing');
   const [c, setC] = useState({});
   const net = netOf(a);
-  const exWorks = termsOf(a) === 'ex'; // Ex-Works: bhada party ka – invoice me nahi judta
+  const exWorks = termsOf(a) === 'ex'; // Ex-Works: freight is paid by the party – not added to invoice
   const [f, setF] = useState({
     qty: net != null ? (net / 1000).toFixed(3) : String(loadedTotal(a) || ''),
     rate: String(a.rate || ''),
@@ -426,17 +426,17 @@ function BillingForm({ a, sub, done }) {
         Final weight: <b>{netText(a)}</b> {net != null && <>(Tare {kg(a.tare.weight)} → Final {kg(a.final.weight)})</>} · Planned {plannedTotal(a)} MT{loadedTotal(a) !== plannedTotal(a) && <> · <b>Loaded {loadedTotal(a)} MT</b></>} · Order rate ₹ {Number(a.rate || 0).toLocaleString('en-IN')}/MT
       </div>
       <div className="alert info">Freight terms: <b>{termsText(a.type, termsOf(a))}</b></div>
-      {a.final?.method === 'photo' && <div className="alert warn">Final weight slip photo me hai – quantity slip dekh kar daalo.</div>}
+      {a.final?.method === 'photo' && <div className="alert warn">Final weight is in the slip photo – enter the quantity from the slip.</div>}
       {a.loading?.delayMin > 0 && <div className="alert danger">{actOf(a)} delay: {a.loading.delayMin} min – {a.loading.delayReason}</div>}
       {whoField}
 
       <h4>Billing Value</h4>
       <div className="form-grid">
-        <Field label="Final billing quantity (MT) *" hint="Verified final weighment se"><input type="number" step="0.001" value={f.qty} onChange={set('qty')} /></Field>
+        <Field label="Final billing quantity (MT) *" hint="From the verified final weighment"><input type="number" step="0.001" value={f.qty} onChange={set('qty')} /></Field>
         <Field label="Applicable order rate (₹/MT) *"><input type="number" value={f.rate} onChange={set('rate')} /></Field>
         <Field label="Gauge / size difference (₹)"><input type="number" value={f.gauge} onChange={set('gauge')} placeholder="0" /></Field>
         <Field label="Additional charges (₹)"><input type="number" value={f.extra} onChange={set('extra')} placeholder="0" /></Field>
-        <Field label="Freight / transport charges (₹)" hint={exWorks ? 'Ex-Works – bhada party ka, invoice me nahi judta' : 'FOR – bhada invoice me judta hai'}>
+        <Field label="Freight / transport charges (₹)" hint={exWorks ? 'Ex-Works – freight is paid by the party, not added to invoice' : 'FOR – freight is added to invoice'}>
           <input type="number" value={exWorks ? '' : f.freight} onChange={set('freight')} placeholder="0" disabled={exWorks} />
         </Field>
         <Field label="Other approved adjustments (₹)"><input type="number" value={f.other} onChange={set('other')} placeholder="0" /></Field>
@@ -447,7 +447,7 @@ function BillingForm({ a, sub, done }) {
           <tr><td>Basic value ({f.qty || 0} MT × ₹ {Number(f.rate || 0).toLocaleString('en-IN')})</td><td>{rs(basic)}</td></tr>
           <tr><td>Gauge / size difference</td><td>{rs(n('gauge'))}</td></tr>
           <tr><td>Additional charges</td><td>{rs(n('extra'))}</td></tr>
-          <tr><td>Freight {exWorks && <span className="muted">(Ex-Works – nahi judta)</span>}</td><td>{rs(freightAmt)}</td></tr>
+          <tr><td>Freight {exWorks && <span className="muted">(Ex-Works – not added)</span>}</td><td>{rs(freightAmt)}</td></tr>
           <tr><td>Other adjustments</td><td>{rs(n('other'))}</td></tr>
           <tr className="sum"><td>Taxable value</td><td>{rs(taxable)}</td></tr>
           <tr><td>GST <input className="pct" type="number" value={f.gstPct} onChange={set('gstPct')} /> %</td><td>{rs(gstAmt)}</td></tr>
@@ -475,7 +475,7 @@ function BillingForm({ a, sub, done }) {
         });
         done();
       }}>
-        Billing complete → Document Verification ko bhejo
+        Complete Billing → Send to Document Verification
       </button>
     </>
   );
@@ -484,7 +484,7 @@ function BillingForm({ a, sub, done }) {
 /** Read-only billing record – kept visible on every later stage. */
 function BillingHistory({ a }) {
   const b = a.billing;
-  if (!b) return <div className="alert">Billing abhi complete nahi hui.</div>;
+  if (!b) return <div className="alert">Billing is not complete yet.</div>;
   return (
     <>
       <h4>Billing History</h4>
@@ -506,7 +506,7 @@ function BillingHistory({ a }) {
 export function BillingPage({ sub }) {
   return (
     <StagePage
-      sub={sub} module="billing" title="Billing" subtitle="Accounts / Billing – final weighment ke hisaab se billing aur tax invoice."
+      sub={sub} module="billing" title="Billing" subtitle="Accounts / Billing – billing and tax invoice based on the final weighment."
       tabs={[
         { key: 'b', label: 'Billing Pending', stages: ['FINAL_DONE'], title: 'Billing & Tax Invoice Preparation', Form: BillingForm },
         { key: 'history', label: 'History', stages: afterStage('FINAL_DONE'), title: 'Billing History', Form: BillingHistory, readOnly: true },
@@ -540,7 +540,7 @@ function DocVerifyForm({ a, sub, done }) {
         updateAdvice(a.id, { stage: 'DOC_OK', docVerify: { remark, time: nowISO(), by: who } });
         done();
       }}>
-        Documents OK → Gate Pass ko bhejo
+        Documents OK → Send to Gate Pass
       </button>
     </>
   );
@@ -548,7 +548,7 @@ function DocVerifyForm({ a, sub, done }) {
 
 /** Read-only record once documents are verified – kept visible on every later stage. */
 function DocVerifyHistory({ a }) {
-  if (!a.docVerify) return <div className="alert">Document verification abhi nahi hui.</div>;
+  if (!a.docVerify) return <div className="alert">Document verification is not done yet.</div>;
   return (
     <>
       <h4>Document Verification History</h4>
@@ -563,7 +563,7 @@ function DocVerifyHistory({ a }) {
 export function DocVerifyPage({ sub }) {
   return (
     <StagePage
-      sub={sub} module="docverify" title="Document Verification" subtitle="Dispatch – Accounts ke documents dispatch checklist se verify karo."
+      sub={sub} module="docverify" title="Document Verification" subtitle="Dispatch – verify the Accounts documents using the dispatch checklist."
       tabs={[
         { key: 'v', label: 'Verification Pending', stages: ['BILLED'], title: 'Dispatch Document Verification', Form: DocVerifyForm },
         { key: 'history', label: 'History', stages: afterStage('BILLED'), title: 'Document Verification History', Form: DocVerifyHistory, readOnly: true },
@@ -586,20 +586,20 @@ function GatePassForm({ a, sub, done }) {
   const ok = DOC_SET.every((x) => c[x]);
   return (
     <>
-      <div className="alert info">Documents verify ho chuke hain ({a.docVerify?.by}) · Invoice {a.billing?.invoiceNo} · E-Way {a.billing?.ewayBill}</div>
+      <div className="alert info">Documents are verified ({a.docVerify?.by}) · Invoice {a.billing?.invoiceNo} · E-Way {a.billing?.ewayBill}</div>
       <div className="alert ok">
         {sub === 'purchase'
-          ? <>Generate karne par Gate Pass <b>{gpNo}</b> banega (supplier ki Bilty <b>{a.gateIn?.biltyNo || '—'}</b> Gate-In par record hui thi)</>
-          : <>Generate karne par ye ban jayenge: Bilty No. <b>{biltyNo}</b> · Gate Pass <b>{gpNo}</b></>}
+          ? <>On generating, Gate Pass <b>{gpNo}</b> will be created (supplier Bilty <b>{a.gateIn?.biltyNo || '—'}</b> was recorded at Gate-In)</>
+          : <>On generating, these will be created: Bilty No. <b>{biltyNo}</b> · Gate Pass <b>{gpNo}</b></>}
       </div>
       {whoField}
-      <h4>Complete Dispatch Document Set (Gate Security ko dena hai)</h4>
+      <h4>Complete Dispatch Document Set (to hand over to Gate Security)</h4>
       <Checks items={DOC_SET} state={c} setState={setC} />
       <button className="btn primary" disabled={!ok} onClick={() => {
         updateAdvice(a.id, { stage: 'GATEPASS', dispatch: { time: nowISO(), by: who, gatePassNo: gpNo, ...(sub === 'sales' ? { biltyNo } : {}) } });
         done();
       }}>
-        Gate Pass generate karo → Security Clearance ko bhejo
+        Generate Gate Pass → Send to Security Clearance
       </button>
     </>
   );
@@ -608,7 +608,7 @@ function GatePassForm({ a, sub, done }) {
 export function GatePassPage({ sub }) {
   return (
     <StagePage
-      sub={sub} module="gatepass" title="Gate Pass" subtitle="Dispatch – gate pass generate karke document set Gate Security ko do."
+      sub={sub} module="gatepass" title="Gate Pass" subtitle="Dispatch – generate the gate pass and hand the document set to Gate Security."
       tabs={[
         { key: 'pending', label: 'Gate Pass Pending', stages: ['DOC_OK'], title: 'Gate Pass Generation', Form: GatePassForm },
         { key: 'history', label: 'History', stages: afterStage('DOC_OK'), title: 'Gate Pass History', readOnly: true, Form: ({ a }) => <GatePassSheet a={a} /> },
@@ -636,11 +636,11 @@ function ClearanceForm({ a, sub, done }) {
         <>
           <h4>Bilty Number Match</h4>
           <div className="form-grid">
-            <Field label="Truck ke paas wali Bilty / LR No. daalo *"><input value={lr} onChange={(e) => setLr(e.target.value)} placeholder="LR-2026-0001" /></Field>
+            <Field label="Enter the Bilty / LR No. carried by the truck *"><input value={lr} onChange={(e) => setLr(e.target.value)} placeholder="LR-2026-0001" /></Field>
           </div>
           {typed && (match
-            ? <div className="alert ok">✔ Bilty number match ho gaya</div>
-            : <div className="alert warn">✘ Bilty number match nahi hua – Dispatch se confirm karo</div>)}
+            ? <div className="alert ok">✔ Bilty number matches</div>
+            : <div className="alert warn">✘ Bilty number does not match – confirm with Dispatch</div>)}
         </>
       )}
       {whoField}
@@ -650,7 +650,7 @@ function ClearanceForm({ a, sub, done }) {
         updateAdvice(a.id, { stage: 'CLEARED', clearance: { time: nowISO(), by: who } });
         done();
       }}>
-        Clearance do → Gate-Out ko bhejo
+        Give Clearance → Send to Gate-Out
       </button>
     </>
   );
@@ -658,7 +658,7 @@ function ClearanceForm({ a, sub, done }) {
 
 /** Read-only record once security clearance is given – kept visible on every later stage. */
 function ClearanceHistory({ a }) {
-  if (!a.clearance) return <div className="alert">Security clearance abhi nahi hui.</div>;
+  if (!a.clearance) return <div className="alert">Security clearance is not done yet.</div>;
   return (
     <>
       <h4>Security Clearance History</h4>
@@ -672,7 +672,7 @@ function ClearanceHistory({ a }) {
 export function ClearancePage({ sub }) {
   return (
     <StagePage
-      sub={sub} module="clearance" title="Security Clearance" subtitle="Gate Security – final document aur vehicle checking."
+      sub={sub} module="clearance" title="Security Clearance" subtitle="Gate Security – final document and vehicle checking."
       tabs={[
         { key: 'c', label: 'Clearance Pending', stages: ['GATEPASS'], title: 'Final Security Checking', Form: ClearanceForm },
         { key: 'history', label: 'History', stages: afterStage('GATEPASS'), title: 'Security Clearance History', Form: ClearanceHistory, readOnly: true },
@@ -682,7 +682,7 @@ export function ClearancePage({ sub }) {
 }
 
 /* ═══════════ Purchase – Material Receipt (GRN) ═══════════ */
-const GRN_CHECKS = ['Material PO ke hisaab se hai (item / size / grade)', 'Quantity weighment se verify ki', 'Supplier invoice mil gaya', 'Material ka quality check kiya'];
+const GRN_CHECKS = ['Material matches the PO (item / size / grade)', 'Quantity verified against weighment', 'Supplier invoice received', 'Material quality checked'];
 
 function GrnForm({ a, sub, done }) {
   const { updateAdvice, state } = useStore();
@@ -695,7 +695,7 @@ function GrnForm({ a, sub, done }) {
   const [remark, setRemark] = useState('');
   const seq = String(state.advices.filter((x) => x.grn).length + 1).padStart(4, '0');
   const grnNo = `GRN-${new Date().getFullYear()}-${seq}`;
-  // Aaya hua maal (bhari − khaali gaadi) vs mangaya hua (ordered) aur vs supplier invoice
+  // Material received (loaded − empty vehicle) vs ordered, and vs supplier invoice
   const ordered = Number(a.reqQty) || plannedTotal(a);
   const diff = netMT != null && Number(invoiceQty) ? netMT - Number(invoiceQty) : null;
   const orderedDiff = netMT != null && ordered ? netMT - ordered : null;
@@ -706,14 +706,14 @@ function GrnForm({ a, sub, done }) {
   return (
     <>
       <div className="alert info">
-        Bhari gaadi {a.tare?.method === 'photo' ? 'slip photo me' : kg(a.tare?.weight)} − khaali gaadi {a.final?.method === 'photo' ? 'slip photo me' : kg(a.final?.weight)} = aaya hua maal <b>{netMT != null ? `${netMT.toFixed(3)} MT` : 'slip photo dekho'}</b>
+        Loaded vehicle {a.tare?.method === 'photo' ? 'in slip photo' : kg(a.tare?.weight)} − empty vehicle {a.final?.method === 'photo' ? 'in slip photo' : kg(a.final?.weight)} = material received <b>{netMT != null ? `${netMT.toFixed(3)} MT` : 'see slip photo'}</b>
       </div>
       <div className="alert info">
-        Mangaya hua (ordered): <b>{ordered} MT</b> · Supplier invoice {a.gateIn?.invoiceNo || '—'} · Bilty {a.gateIn?.biltyNo || '—'}
+        Ordered: <b>{ordered} MT</b> · Supplier invoice {a.gateIn?.invoiceNo || '—'} · Bilty {a.gateIn?.biltyNo || '—'}
       </div>
       {orderedDiff != null && (
         <div className={`alert ${off(orderedDiff, ordered) ? 'warn' : 'ok'}`}>
-          Aaya hua vs mangaya hua: <b>{sgn(orderedDiff)}</b> {off(orderedDiff, ordered) ? (orderedDiff < 0 ? '(kam aaya – remark do)' : '(zyada aaya – remark do)') : '(poora aaya)'}
+          Received vs ordered: <b>{sgn(orderedDiff)}</b> {off(orderedDiff, ordered) ? (orderedDiff < 0 ? '(received less – enter remark)' : '(received more – enter remark)') : '(full quantity received)'}
         </div>
       )}
       {whoField}
@@ -729,7 +729,7 @@ function GrnForm({ a, sub, done }) {
       </div>
       {diff != null && (
         <div className={`alert ${off(diff, Number(invoiceQty)) ? 'warn' : 'ok'}`}>
-          Aaya hua vs supplier invoice: <b>{sgn(diff)}</b> {off(diff, Number(invoiceQty)) ? '(short / excess – remark do)' : '(theek hai)'}
+          Received vs supplier invoice: <b>{sgn(diff)}</b> {off(diff, Number(invoiceQty)) ? '(short / excess – enter remark)' : '(OK)'}
         </div>
       )}
       <div className="form-grid">
@@ -737,7 +737,7 @@ function GrnForm({ a, sub, done }) {
       </div>
       <h4>Material Receipt Checklist</h4>
       <Checks items={GRN_CHECKS} state={c} setState={setC} />
-      <div className="alert ok">Save karne par GRN No. <b>{grnNo}</b> banega.</div>
+      <div className="alert ok">On saving, GRN No. <b>{grnNo}</b> will be created.</div>
       <button className="btn primary" disabled={!ok} onClick={() => {
         updateAdvice(a.id, {
           stage: 'CLEARED',
@@ -745,7 +745,7 @@ function GrnForm({ a, sub, done }) {
         });
         done();
       }}>
-        GRN save karo → Gate-Out (khaali gaadi) ko bhejo
+        Save GRN → Send to Gate-Out (empty vehicle)
       </button>
     </>
   );
@@ -753,14 +753,14 @@ function GrnForm({ a, sub, done }) {
 
 function GrnHistory({ a }) {
   const g = a.grn;
-  if (!g) return <div className="alert">GRN abhi nahi bana.</div>;
+  if (!g) return <div className="alert">GRN is not created yet.</div>;
   return (
     <>
       <h4>Material Receipt (GRN) History</h4>
       <table className="kvt"><tbody>
         <tr><th>GRN No.</th><td><b>{g.grnNo}</b></td></tr>
-        <tr><th>Mangaya hua</th><td>{(g.orderedQty ?? (Number(a.reqQty) || plannedTotal(a)))} MT</td></tr>
-        <tr><th>Net aaya hua</th><td>{g.netQty != null ? `${Number(g.netQty).toFixed(3)} MT` : 'Slip photo me'}</td></tr>
+        <tr><th>Ordered</th><td>{(g.orderedQty ?? (Number(a.reqQty) || plannedTotal(a)))} MT</td></tr>
+        <tr><th>Net received</th><td>{g.netQty != null ? `${Number(g.netQty).toFixed(3)} MT` : 'In slip photo'}</td></tr>
         <tr><th>Invoice qty</th><td>{g.invoiceQty != null ? `${g.invoiceQty} MT` : '—'}</td></tr>
         <tr><th>Quality</th><td>{g.quality}</td></tr>
         {g.remark && <tr><th>Remark</th><td>{g.remark}</td></tr>}
@@ -773,7 +773,7 @@ function GrnHistory({ a }) {
 export function GrnPage({ sub }) {
   return (
     <StagePage
-      sub={sub} module="grn" title="Material Receipt (GRN)" subtitle="Store – unload hua maal PO aur supplier invoice se mila ke receive karo."
+      sub={sub} module="grn" title="Material Receipt (GRN)" subtitle="Store – receive the unloaded material after matching it with the PO and supplier invoice."
       tabs={[
         { key: 'g', label: 'GRN Pending', stages: ['FINAL_DONE'], title: 'Material Receipt (GRN)', Form: GrnForm },
         { key: 'history', label: 'History', stages: ['CLEARED', 'OUT'], title: 'GRN History', Form: GrnHistory, readOnly: true },
@@ -789,14 +789,14 @@ function GateOutForm({ a, sub, done }) {
   const [c, setC] = useState({});
   const purchase = a.type === 'purchase';
   const items = purchase
-    ? ['Gaadi poori khaali hai (fully unloaded)', 'Gaadi me hamara koi material nahi hai', 'Gate-Out Register / System me details record kiye']
-    : ['Gate-Out Register / System me details record kiye', 'Koi discrepancy nahi hai'];
+    ? ['Vehicle is completely empty (fully unloaded)', 'No material of ours remains in the vehicle', 'Details recorded in Gate-Out Register / System']
+    : ['Details recorded in Gate-Out Register / System', 'No discrepancy found'];
   const ok = items.every((x) => c[x]);
   return (
     <>
       {purchase
-        ? <div className="alert ok">✔ GRN ho chuka hai ({a.grn?.grnNo} · {a.grn?.by}) · Khaali gaadi gate-out</div>
-        : <div className="alert ok">✔ Security clearance ho chuka hai ({a.clearance?.by}) · Gate Pass {a.dispatch?.gatePassNo}</div>}
+        ? <div className="alert ok">✔ GRN is done ({a.grn?.grnNo} · {a.grn?.by}) · Empty vehicle Gate-Out</div>
+        : <div className="alert ok">✔ Security clearance is done ({a.clearance?.by}) · Gate Pass {a.dispatch?.gatePassNo}</div>}
       {whoField}
       <h4>Gate-Out Recording</h4>
       <Checks items={items} state={c} setState={setC} />
@@ -804,7 +804,7 @@ function GateOutForm({ a, sub, done }) {
         updateAdvice(a.id, { stage: 'OUT', gateOut: { time: nowISO(), by: who } });
         done();
       }}>
-        Gate-Out record karo → Vehicle Release
+        Record Gate-Out → Vehicle Release
       </button>
     </>
   );
@@ -812,7 +812,7 @@ function GateOutForm({ a, sub, done }) {
 
 /** Read-only record once the vehicle is released – final entry of the whole chain. */
 function GateOutHistory({ a }) {
-  if (!a.gateOut) return <div className="alert">Gate-Out abhi nahi hua.</div>;
+  if (!a.gateOut) return <div className="alert">Gate-Out is not done yet.</div>;
   return (
     <>
       <h4>Gate-Out History</h4>
@@ -826,7 +826,7 @@ function GateOutHistory({ a }) {
 export function GateOutPage({ sub }) {
   return (
     <StagePage
-      sub={sub} module="gateout" title="Gate-Out" subtitle="Main gate se vehicle release aur Gate-Out register entry."
+      sub={sub} module="gateout" title="Gate-Out" subtitle="Vehicle release at the main gate and Gate-Out register entry."
       tabs={[
         { key: 'out', label: 'Gate-Out Pending', stages: ['CLEARED'], title: 'Gate-Out Record', Form: GateOutForm },
         { key: 'history', label: 'History', stages: afterStage('CLEARED'), title: 'Gate-Out History', Form: GateOutHistory, readOnly: true },

@@ -24,7 +24,7 @@ function AltPicker({ value, options, disabled, onChange }) {
               <input type="checkbox" checked={value.includes(o.id)} onChange={() => toggle(o.id)} /> {o.name}
             </label>
           ))}
-          {value.length > 0 && <button type="button" className="btn sm ghost" onClick={() => onChange([])}>Sab hatao</button>}
+          {value.length > 0 && <button type="button" className="btn sm ghost" onClick={() => onChange([])}>Clear all</button>}
         </div>
       )}
     </div>
@@ -47,15 +47,15 @@ export default function Permissions() {
   const target = state.users.find((u) => u.id === uid) || state.users.find((u) => u.role !== 'admin') || state.users[0];
   const others = state.users.filter((u) => u.id !== target.id && u.role !== 'admin');
 
-  if (user.role !== 'admin') return <div className="alert">Sirf Admin permission page dekh sakta hai.</div>;
+  if (user.role !== 'admin') return <div className="alert">Only the admin can view the Permissions page.</div>;
 
   return (
     <>
       <PageHead
         title={`Master · Permissions – ${target.name}`}
-        sub={`${ROLES[target.role]}. Sales / Purchase me jo pages dene hain unka View / Action tick karo – baaki pages is user ke sidebar me dikhenge hi nahi. Alternative users = jab ye user na ho to wo (ek ya zyada) is page ka kaam kar sakte hain.`}
+        sub={`${ROLES[target.role]}. Tick View / Action for the Sales / Purchase pages this user should get. Other pages will not appear in this user's sidebar. Alternative users = when this user is unavailable, they (one or more) can do this page's work.`}
         right={
-          <button className="btn" onClick={() => confirm('Saari settings (users ki permissions aur demo data) default par sync karein? Aapke banaye hue advices bhi hat jayenge.') && resetDemo()}>
+          <button className="btn" onClick={() => confirm('Reset all settings (user permissions and demo data) to default? Advices you created will also be removed.') && resetDemo()}>
             Sync setting
           </button>
         }

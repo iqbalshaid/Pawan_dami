@@ -47,10 +47,10 @@ export const labelsFor = (sub) =>
 // Falls back to the subsystem's default act for older records that have no `purpose`.
 export const actOf = (a) => (a.purpose === 'unloading' ? 'Unloading' : a.purpose === 'loading' ? 'Loading' : labelsFor(a.type).act);
 
-// Freight (bhada) terms. Sales: EX = party apni gaadi se uthata hai (bhada party ka),
-// FOR = hum destination tak pahunchate hain (bhada hamara, invoice me judta hai).
-// Purchase flips: EX = hum supplier ke yahan se uthate hain (bhada hamara),
-// FOR = supplier plant tak pahunchata hai (bhada supplier ka).
+// Freight terms. Sales: EX = the party collects with its own vehicle (freight paid by the party),
+// FOR = we deliver to the destination (freight paid by us, added to the invoice).
+// Purchase flips: EX = we collect from the supplier (freight paid by us),
+// FOR = the supplier delivers to the plant (freight paid by the supplier).
 // Older records without the field: if we carry a freight amount we bear it
 // (Sales → FOR, Purchase → EX), otherwise the other party does.
 export const termsOf = (a) => {
@@ -60,8 +60,8 @@ export const termsOf = (a) => {
 };
 export const termsText = (sub, terms) =>
   ({
-    sales: { ex: 'Ex-Works (EX) – bhada party ka', for: 'FOR – bhada hamara (invoice me)' },
-    purchase: { ex: 'Ex-Works (EX) – bhada hamara', for: 'FOR – bhada supplier ka' },
+    sales: { ex: 'Ex-Works (EX) – freight paid by the party', for: 'FOR – freight paid by us (added to invoice)' },
+    purchase: { ex: 'Ex-Works (EX) – freight paid by us', for: 'FOR – freight paid by the supplier' },
   }[sub][terms]);
 // Do we carry the freight cost on our side (shown in billing / bilty)?
 export const weBearFreight = (a) => (a.type === 'purchase' ? termsOf(a) === 'ex' : termsOf(a) === 'for');
@@ -168,7 +168,7 @@ export const ROLES = {
   admin: 'Admin',
   sales: 'Dispatch – Advice',
   gate: 'Security / Gate Incharge',
-  kata: 'Weighbridge (Kata) Incharge',
+  kata: 'Weighbridge Incharge',
   loader: 'Loading / Unloading Supervisor',
   accounts: 'Accounts / Billing',
   dispatch: 'Dispatch Incharge',
@@ -198,7 +198,7 @@ export const SEED_USERS = [
     }),
   },
   {
-    id: 'u4', name: 'Mahesh (Kata)', role: 'kata',
+    id: 'u4', name: 'Mahesh (Weighbridge)', role: 'kata',
     perms: mk({
       'sales.weighin': ['view', 'action'], 'sales.weighout': ['view', 'action'],
       'purchase.weighin': ['view', 'action'], 'purchase.weighout': ['view', 'action'],
@@ -275,7 +275,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '25 NB', grade: 'YST-240', reqQty: 9, planQty: 9 }],
     freight: 6500,
     gateIn: { time: iso(180), by: 'Suresh (Gate)' },
-    tare: { weight: 13800, photo: '', remark: 'Empty truck', method: 'manual', time: iso(170), by: 'Mahesh (Kata)' },
+    tare: { weight: 13800, photo: '', remark: 'Empty truck', method: 'manual', time: iso(170), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(150), by: 'Dinesh (Loading)' }, // started, not ended yet – shows "Started" status
   }),
   // 4. Loaded, final weight done – waiting for billing.
@@ -287,9 +287,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '32 NB', grade: 'YST-240', reqQty: 15, planQty: 15 }],
     freight: 9500,
     gateIn: { time: iso(380), by: 'Suresh (Gate)' },
-    tare: { weight: 13800, photo: '', remark: '', method: 'manual', time: iso(370), by: 'Mahesh (Kata)' },
+    tare: { weight: 13800, photo: '', remark: '', method: 'manual', time: iso(370), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(350), end: iso(270), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 28750, photo: '', remark: 'OK', method: 'manual', time: iso(250), by: 'Mahesh (Kata)' },
+    final: { weight: 28750, photo: '', remark: 'OK', method: 'manual', time: iso(250), by: 'Mahesh (Weighbridge)' },
   }),
   // 4b. Loading done, truck gone back to weighbridge for final weight.
   base({
@@ -300,7 +300,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Rectangular Tube', size: '60x40x2.5 mm', grade: 'YST-210', reqQty: 10, planQty: 10 }],
     freight: 12500,
     gateIn: { time: iso(290), by: 'Suresh (Gate)' },
-    tare: { weight: 14000, photo: '', remark: '', method: 'manual', time: iso(280), by: 'Mahesh (Kata)' },
+    tare: { weight: 14000, photo: '', remark: '', method: 'manual', time: iso(280), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(270), end: iso(200), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
   }),
   // 5. Billed – waiting for dispatch's document verification.
@@ -312,9 +312,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Square Tube', size: '40x40x2.0 mm', grade: 'YST-210', reqQty: 10, planQty: 10 }],
     freight: 28000,
     gateIn: { time: iso(560), by: 'Suresh (Gate)' },
-    tare: { weight: 14100, photo: '', remark: '', method: 'manual', time: iso(550), by: 'Mahesh (Kata)' },
-    loading: { start: iso(540), end: iso(460), delayMin: 15, delayReason: 'Crane maintenance ke liye ruka tha', by: 'Dinesh (Loading)' },
-    final: { weight: 24350, photo: '', remark: '', method: 'manual', time: iso(440), by: 'Mahesh (Kata)' },
+    tare: { weight: 14100, photo: '', remark: '', method: 'manual', time: iso(550), by: 'Mahesh (Weighbridge)' },
+    loading: { start: iso(540), end: iso(460), delayMin: 15, delayReason: 'Stopped for crane maintenance', by: 'Dinesh (Loading)' },
+    final: { weight: 24350, photo: '', remark: '', method: 'manual', time: iso(440), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 10.25, rate: 61000, basic: 625250, gauge: 0, extra: 0, freight: 28000, other: 0,
       taxable: 653250, gstPct: 18, gstAmt: 117585, total: 770835,
@@ -330,9 +330,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Rectangular Tube', size: '60x40x2.5 mm', grade: 'YST-210', reqQty: 11, planQty: 11 }],
     freight: 13000,
     gateIn: { time: iso(740), by: 'Suresh (Gate)' },
-    tare: { weight: 14050, photo: '', remark: '', method: 'manual', time: iso(730), by: 'Mahesh (Kata)' },
+    tare: { weight: 14050, photo: '', remark: '', method: 'manual', time: iso(730), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(720), end: iso(650), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 25100, photo: '', remark: '', method: 'manual', time: iso(630), by: 'Mahesh (Kata)' },
+    final: { weight: 25100, photo: '', remark: '', method: 'manual', time: iso(630), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 11.05, rate: 62000, basic: 685100, gauge: 0, extra: 0, freight: 13000, other: 0,
       taxable: 698100, gstPct: 18, gstAmt: 125658, total: 823758,
@@ -349,9 +349,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '25 NB', grade: 'YST-240', reqQty: 8, planQty: 8 }],
     freight: 6000,
     gateIn: { time: iso(860), by: 'Suresh (Gate)' },
-    tare: { weight: 13600, photo: '', remark: '', method: 'manual', time: iso(850), by: 'Mahesh (Kata)' },
+    tare: { weight: 13600, photo: '', remark: '', method: 'manual', time: iso(850), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(840), end: iso(770), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 21700, photo: '', remark: '', method: 'manual', time: iso(750), by: 'Mahesh (Kata)' },
+    final: { weight: 21700, photo: '', remark: '', method: 'manual', time: iso(750), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 8.1, rate: 60800, basic: 492480, gauge: 0, extra: 0, freight: 6000, other: 0,
       taxable: 498480, gstPct: 18, gstAmt: 89726, total: 588206,
@@ -369,9 +369,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '32 NB', grade: 'YST-240', reqQty: 14, planQty: 14 }],
     freight: 9000,
     gateIn: { time: iso(980), by: 'Suresh (Gate)' },
-    tare: { weight: 13900, photo: '', remark: '', method: 'manual', time: iso(970), by: 'Mahesh (Kata)' },
+    tare: { weight: 13900, photo: '', remark: '', method: 'manual', time: iso(970), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(960), end: iso(880), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 27650, photo: '', remark: '', method: 'manual', time: iso(860), by: 'Mahesh (Kata)' },
+    final: { weight: 27650, photo: '', remark: '', method: 'manual', time: iso(860), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 13.75, rate: 59500, basic: 818125, gauge: 0, extra: 0, freight: 9000, other: 0,
       taxable: 827125, gstPct: 18, gstAmt: 148883, total: 976008,
@@ -390,9 +390,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Square Tube', size: '40x40x2.0 mm', grade: 'YST-210', reqQty: 16, planQty: 16 }],
     freight: 30000,
     gateIn: { time: iso(1440), by: 'Suresh (Gate)' },
-    tare: { weight: 14300, photo: '', remark: '', method: 'manual', time: iso(1430), by: 'Mahesh (Kata)' },
+    tare: { weight: 14300, photo: '', remark: '', method: 'manual', time: iso(1430), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1420), end: iso(1340), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 30550, photo: '', remark: '', method: 'manual', time: iso(1320), by: 'Mahesh (Kata)' },
+    final: { weight: 30550, photo: '', remark: '', method: 'manual', time: iso(1320), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 16.25, rate: 61200, basic: 994500, gauge: 0, extra: 0, freight: 30000, other: 0,
       taxable: 1024500, gstPct: 18, gstAmt: 184410, total: 1208910,
@@ -434,7 +434,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 23, planQty: 23 }],
     targetHours: 3, freight: 24000,
     gateIn: { time: iso(380), by: 'Suresh (Gate)', biltyNo: 'SSI-33109', invoiceNo: 'SSI/INV/112', ewayBill: 'EWB8812055' },
-    tare: { weight: 37200, photo: '', remark: 'Loaded truck weighed first', method: 'manual', time: iso(370), by: 'Mahesh (Kata)' },
+    tare: { weight: 37200, photo: '', remark: 'Loaded truck weighed first', method: 'manual', time: iso(370), by: 'Mahesh (Weighbridge)' },
   }),
   // 4. Unloading done – truck gone back to weighbridge for final (empty) weight.
   base({
@@ -445,7 +445,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 19, planQty: 19 }],
     targetHours: 3, freight: 14500,
     gateIn: { time: iso(480), by: 'Suresh (Gate)', biltyNo: 'BHS-55233', invoiceNo: 'BHS/INV/1002', ewayBill: 'EWB8812066' },
-    tare: { weight: 33800, photo: '', remark: '', method: 'manual', time: iso(470), by: 'Mahesh (Kata)' },
+    tare: { weight: 33800, photo: '', remark: '', method: 'manual', time: iso(470), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(460), end: iso(390), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
   }),
   // 5. Final (empty) weight done – waiting for billing.
@@ -457,9 +457,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 24, planQty: 24 }],
     targetHours: 3, freight: 20000,
     gateIn: { time: iso(630), by: 'Suresh (Gate)', biltyNo: 'JCL-77140', invoiceNo: 'JCL/INV/470', ewayBill: 'EWB8812077' },
-    tare: { weight: 38500, photo: '', remark: '', method: 'manual', time: iso(620), by: 'Mahesh (Kata)' },
+    tare: { weight: 38500, photo: '', remark: '', method: 'manual', time: iso(620), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(610), end: iso(540), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14600, photo: '', remark: 'Empty weight after unloading', method: 'manual', time: iso(520), by: 'Mahesh (Kata)' },
+    final: { weight: 14600, photo: '', remark: 'Empty weight after unloading', method: 'manual', time: iso(520), by: 'Mahesh (Weighbridge)' },
   }),
   // 6. Billed – waiting for dispatch's document verification.
   base({
@@ -470,9 +470,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 21, planQty: 21 }],
     targetHours: 3, freight: 22500,
     gateIn: { time: iso(780), by: 'Suresh (Gate)', biltyNo: 'SSI-33150', invoiceNo: 'SSI/INV/140', ewayBill: 'EWB8812088' },
-    tare: { weight: 35300, photo: '', remark: '', method: 'manual', time: iso(770), by: 'Mahesh (Kata)' },
+    tare: { weight: 35300, photo: '', remark: '', method: 'manual', time: iso(770), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(760), end: iso(690), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14100, photo: '', remark: '', method: 'manual', time: iso(670), by: 'Mahesh (Kata)' },
+    final: { weight: 14100, photo: '', remark: '', method: 'manual', time: iso(670), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 21.2, rate: 53200, basic: 1127840, gauge: 0, extra: 0, freight: 22500, other: 0,
       taxable: 1150340, gstPct: 18, gstAmt: 207061, total: 1357401,
@@ -488,9 +488,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 18, planQty: 18 }],
     targetHours: 3, freight: 13500,
     gateIn: { time: iso(930), by: 'Suresh (Gate)', biltyNo: 'BHS-55280', invoiceNo: 'BHS/INV/1050', ewayBill: 'EWB8812099' },
-    tare: { weight: 32500, photo: '', remark: '', method: 'manual', time: iso(920), by: 'Mahesh (Kata)' },
+    tare: { weight: 32500, photo: '', remark: '', method: 'manual', time: iso(920), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(910), end: iso(840), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 13900, photo: '', remark: '', method: 'manual', time: iso(820), by: 'Mahesh (Kata)' },
+    final: { weight: 13900, photo: '', remark: '', method: 'manual', time: iso(820), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 18.6, rate: 52600, basic: 978360, gauge: 0, extra: 0, freight: 13500, other: 0,
       taxable: 991860, gstPct: 18, gstAmt: 178535, total: 1170395,
@@ -507,9 +507,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 24, planQty: 24 }],
     targetHours: 3, freight: 19500,
     gateIn: { time: iso(1080), by: 'Suresh (Gate)', biltyNo: 'JCL-77190', invoiceNo: 'JCL/INV/510', ewayBill: 'EWB8812110' },
-    tare: { weight: 38900, photo: '', remark: '', method: 'manual', time: iso(1070), by: 'Mahesh (Kata)' },
+    tare: { weight: 38900, photo: '', remark: '', method: 'manual', time: iso(1070), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1060), end: iso(990), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14700, photo: '', remark: '', method: 'manual', time: iso(970), by: 'Mahesh (Kata)' },
+    final: { weight: 14700, photo: '', remark: '', method: 'manual', time: iso(970), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 24.2, rate: 54400, basic: 1316480, gauge: 0, extra: 0, freight: 19500, other: 0,
       taxable: 1335980, gstPct: 18, gstAmt: 240476, total: 1576456,
@@ -527,9 +527,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 22, planQty: 22 }],
     targetHours: 3, freight: 21500,
     gateIn: { time: iso(1230), by: 'Suresh (Gate)', biltyNo: 'SSI-33200', invoiceNo: 'SSI/INV/180', ewayBill: 'EWB8812121' },
-    tare: { weight: 36800, photo: '', remark: '', method: 'manual', time: iso(1220), by: 'Mahesh (Kata)' },
+    tare: { weight: 36800, photo: '', remark: '', method: 'manual', time: iso(1220), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1210), end: iso(1140), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14400, photo: '', remark: '', method: 'manual', time: iso(1120), by: 'Mahesh (Kata)' },
+    final: { weight: 14400, photo: '', remark: '', method: 'manual', time: iso(1120), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 22.4, rate: 53800, basic: 1205120, gauge: 0, extra: 0, freight: 21500, other: 0,
       taxable: 1226620, gstPct: 18, gstAmt: 220792, total: 1447412,
@@ -548,9 +548,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 22, planQty: 22 }],
     targetHours: 3, freight: 18500,
     gateIn: { time: iso(1950), by: 'Suresh (Gate)', biltyNo: 'JCL-77102', invoiceNo: 'JCL/INV/450', ewayBill: 'EWB8811900' },
-    tare: { weight: 36500, photo: '', remark: 'Loaded truck weighed first', method: 'manual', time: iso(1940), by: 'Mahesh (Kata)' },
+    tare: { weight: 36500, photo: '', remark: 'Loaded truck weighed first', method: 'manual', time: iso(1940), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1930), end: iso(1820), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14500, photo: '', remark: 'Empty weight after unloading', method: 'manual', time: iso(1800), by: 'Mahesh (Kata)' },
+    final: { weight: 14500, photo: '', remark: 'Empty weight after unloading', method: 'manual', time: iso(1800), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 22, rate: 54200, basic: 1192400, gauge: 0, extra: 0, freight: 18500, other: 0,
       taxable: 1210900, gstPct: 18, gstAmt: 217962, total: 1428862,
@@ -569,7 +569,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'Gupta Steel Agency', address: 'Main Road, Jagdalpur, CG', gst: '22AAGSA6677P1Z3', instr: '' },
     transport: { name: 'Jagdalpur Carriers', vehicle: 'CG17 JJ 2020', driver: 'Naresh', mobile: '9876500211', from: 'Urla, Raipur', to: 'Jagdalpur, CG' },
     items: [{ desc: 'MS Square Tube', size: '25x25x2.0 mm', grade: 'YST-210', reqQty: 7, planQty: 7 }],
-    freightTerms: 'ex', freight: 0, // Ex-Works – party apni gaadi se utha raha hai
+    freightTerms: 'ex', freight: 0, // Ex-Works – party is collecting with its own vehicle
   }),
   base({
     id: 'a11', type: 'sales', no: 'SLS-0011', stage: 'GATED_IN', date: iso(160),
@@ -588,7 +588,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Rectangular Tube', size: '50x50x2.5 mm', grade: 'YST-210', reqQty: 11, planQty: 11 }],
     freight: 11500,
     gateIn: { time: iso(240), by: 'Suresh (Gate)' },
-    tare: { weight: 14000, photo: '', remark: '', method: 'manual', time: iso(230), by: 'Mahesh (Kata)' },
+    tare: { weight: 14000, photo: '', remark: '', method: 'manual', time: iso(230), by: 'Mahesh (Weighbridge)' },
   }),
   base({
     id: 'a13', type: 'sales', no: 'SLS-0013', stage: 'LOADED', date: iso(340),
@@ -598,7 +598,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '25 NB', grade: 'YST-240', reqQty: 10, planQty: 10 }],
     freight: 7200,
     gateIn: { time: iso(320), by: 'Suresh (Gate)' },
-    tare: { weight: 13750, photo: '', remark: '', method: 'manual', time: iso(310), by: 'Mahesh (Kata)' },
+    tare: { weight: 13750, photo: '', remark: '', method: 'manual', time: iso(310), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(300), end: iso(230), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
   }),
   base({
@@ -609,9 +609,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Square Tube', size: '40x40x2.0 mm', grade: 'YST-210', reqQty: 17, planQty: 17 }],
     freight: 31000,
     gateIn: { time: iso(430), by: 'Suresh (Gate)' },
-    tare: { weight: 14150, photo: '', remark: '', method: 'manual', time: iso(420), by: 'Mahesh (Kata)' },
+    tare: { weight: 14150, photo: '', remark: '', method: 'manual', time: iso(420), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(410), end: iso(340), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 31350, photo: '', remark: '', method: 'manual', time: iso(320), by: 'Mahesh (Kata)' },
+    final: { weight: 31350, photo: '', remark: '', method: 'manual', time: iso(320), by: 'Mahesh (Weighbridge)' },
   }),
   base({
     id: 'a15', type: 'sales', no: 'SLS-0015', stage: 'BILLED', date: iso(640),
@@ -621,9 +621,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '32 NB', grade: 'YST-240', reqQty: 12, planQty: 12 }],
     freight: 8000,
     gateIn: { time: iso(600), by: 'Suresh (Gate)' },
-    tare: { weight: 13950, photo: '', remark: '', method: 'manual', time: iso(590), by: 'Mahesh (Kata)' },
+    tare: { weight: 13950, photo: '', remark: '', method: 'manual', time: iso(590), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(580), end: iso(500), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 25950, photo: '', remark: '', method: 'manual', time: iso(480), by: 'Mahesh (Kata)' },
+    final: { weight: 25950, photo: '', remark: '', method: 'manual', time: iso(480), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 12, rate: 59500, basic: 714000, gauge: 0, extra: 0, freight: 8000, other: 0,
       taxable: 722000, gstPct: 18, gstAmt: 129960, total: 851960,
@@ -638,9 +638,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Square Tube', size: '25x25x2.0 mm', grade: 'YST-210', reqQty: 9, planQty: 9 }],
     freight: 12500,
     gateIn: { time: iso(780), by: 'Suresh (Gate)' },
-    tare: { weight: 13700, photo: '', remark: '', method: 'manual', time: iso(770), by: 'Mahesh (Kata)' },
+    tare: { weight: 13700, photo: '', remark: '', method: 'manual', time: iso(770), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(760), end: iso(690), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 22400, photo: '', remark: '', method: 'manual', time: iso(670), by: 'Mahesh (Kata)' },
+    final: { weight: 22400, photo: '', remark: '', method: 'manual', time: iso(670), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 8.7, rate: 61800, basic: 537660, gauge: 0, extra: 0, freight: 12500, other: 0,
       taxable: 550160, gstPct: 18, gstAmt: 99029, total: 649189,
@@ -656,9 +656,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '40 NB', grade: 'YST-240', reqQty: 14, planQty: 14 }],
     freight: 10500,
     gateIn: { time: iso(900), by: 'Suresh (Gate)' },
-    tare: { weight: 14200, photo: '', remark: '', method: 'manual', time: iso(890), by: 'Mahesh (Kata)' },
+    tare: { weight: 14200, photo: '', remark: '', method: 'manual', time: iso(890), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(880), end: iso(810), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 28100, photo: '', remark: '', method: 'manual', time: iso(790), by: 'Mahesh (Kata)' },
+    final: { weight: 28100, photo: '', remark: '', method: 'manual', time: iso(790), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 13.9, rate: 60500, basic: 840950, gauge: 0, extra: 0, freight: 10500, other: 0,
       taxable: 851450, gstPct: 18, gstAmt: 153261, total: 1004711,
@@ -675,9 +675,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '25 NB', grade: 'YST-240', reqQty: 10, planQty: 10 }],
     freight: 7000,
     gateIn: { time: iso(1020), by: 'Suresh (Gate)' },
-    tare: { weight: 13800, photo: '', remark: '', method: 'manual', time: iso(1010), by: 'Mahesh (Kata)' },
+    tare: { weight: 13800, photo: '', remark: '', method: 'manual', time: iso(1010), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1000), end: iso(930), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 23900, photo: '', remark: '', method: 'manual', time: iso(910), by: 'Mahesh (Kata)' },
+    final: { weight: 23900, photo: '', remark: '', method: 'manual', time: iso(910), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 10.1, rate: 60800, basic: 614080, gauge: 0, extra: 0, freight: 7000, other: 0,
       taxable: 621080, gstPct: 18, gstAmt: 111794, total: 732874,
@@ -695,9 +695,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '32 NB', grade: 'YST-240', reqQty: 13, planQty: 13 }],
     freight: 8500,
     gateIn: { time: iso(1500), by: 'Suresh (Gate)' },
-    tare: { weight: 14050, photo: '', remark: '', method: 'manual', time: iso(1490), by: 'Mahesh (Kata)' },
+    tare: { weight: 14050, photo: '', remark: '', method: 'manual', time: iso(1490), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1480), end: iso(1410), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 27100, photo: '', remark: '', method: 'manual', time: iso(1390), by: 'Mahesh (Kata)' },
+    final: { weight: 27100, photo: '', remark: '', method: 'manual', time: iso(1390), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 13.05, rate: 59500, basic: 776475, gauge: 0, extra: 0, freight: 8500, other: 0,
       taxable: 784975, gstPct: 18, gstAmt: 141296, total: 926271,
@@ -715,7 +715,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Shyam Carriers', vehicle: 'WB05 KK 4455', driver: 'Partha', mobile: '9876500311', from: 'Durgapur, WB', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 20, planQty: 20 }],
-    targetHours: 3, freightTerms: 'for', freight: 0, // FOR – supplier plant tak pahunchayega, bhada uska
+    targetHours: 3, freightTerms: 'for', freight: 0, // FOR – supplier delivers to the plant, freight paid by the supplier
   }),
   base({
     id: 'p12', type: 'purchase', no: 'PUR-0012', stage: 'GATED_IN', date: iso(220),
@@ -734,7 +734,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 18, planQty: 18 }],
     targetHours: 3, freight: 13500,
     gateIn: { time: iso(400), by: 'Suresh (Gate)', biltyNo: 'BHS-55310', invoiceNo: 'BHS/INV/1110', ewayBill: 'EWB8812150' },
-    tare: { weight: 32400, photo: '', remark: '', method: 'manual', time: iso(390), by: 'Mahesh (Kata)' },
+    tare: { weight: 32400, photo: '', remark: '', method: 'manual', time: iso(390), by: 'Mahesh (Weighbridge)' },
   }),
   base({
     id: 'p14', type: 'purchase', no: 'PUR-0014', stage: 'LOADED', date: iso(530),
@@ -744,7 +744,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 21, planQty: 21 }],
     targetHours: 3, freight: 22000,
     gateIn: { time: iso(500), by: 'Suresh (Gate)', biltyNo: 'SSI-33260', invoiceNo: 'SSI/INV/160', ewayBill: 'EWB8812160' },
-    tare: { weight: 35600, photo: '', remark: '', method: 'manual', time: iso(490), by: 'Mahesh (Kata)' },
+    tare: { weight: 35600, photo: '', remark: '', method: 'manual', time: iso(490), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(480), end: iso(410), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
   }),
   base({
@@ -755,9 +755,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 19, planQty: 19 }],
     targetHours: 3, freight: 14800,
     gateIn: { time: iso(660), by: 'Suresh (Gate)', biltyNo: 'BHS-55345', invoiceNo: 'BHS/INV/1150', ewayBill: 'EWB8812170' },
-    tare: { weight: 33900, photo: '', remark: '', method: 'manual', time: iso(650), by: 'Mahesh (Kata)' },
+    tare: { weight: 33900, photo: '', remark: '', method: 'manual', time: iso(650), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(640), end: iso(570), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14450, photo: '', remark: 'Empty weight after unloading', method: 'manual', time: iso(550), by: 'Mahesh (Kata)' },
+    final: { weight: 14450, photo: '', remark: 'Empty weight after unloading', method: 'manual', time: iso(550), by: 'Mahesh (Weighbridge)' },
   }),
   base({
     id: 'p16', type: 'purchase', no: 'PUR-0016', stage: 'BILLED', date: iso(830),
@@ -767,9 +767,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 24, planQty: 24 }],
     targetHours: 3, freight: 20000,
     gateIn: { time: iso(810), by: 'Suresh (Gate)', biltyNo: 'JCL-77260', invoiceNo: 'JCL/INV/560', ewayBill: 'EWB8812180' },
-    tare: { weight: 39000, photo: '', remark: '', method: 'manual', time: iso(800), by: 'Mahesh (Kata)' },
+    tare: { weight: 39000, photo: '', remark: '', method: 'manual', time: iso(800), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(790), end: iso(720), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14900, photo: '', remark: '', method: 'manual', time: iso(700), by: 'Mahesh (Kata)' },
+    final: { weight: 14900, photo: '', remark: '', method: 'manual', time: iso(700), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 24.1, rate: 54000, basic: 1301400, gauge: 0, extra: 0, freight: 20000, other: 0,
       taxable: 1321400, gstPct: 18, gstAmt: 237852, total: 1559252,
@@ -784,9 +784,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 20, planQty: 20 }],
     targetHours: 3, freight: 21000,
     gateIn: { time: iso(960), by: 'Suresh (Gate)', biltyNo: 'SSI-33300', invoiceNo: 'SSI/INV/200', ewayBill: 'EWB8812190' },
-    tare: { weight: 34700, photo: '', remark: '', method: 'manual', time: iso(950), by: 'Mahesh (Kata)' },
+    tare: { weight: 34700, photo: '', remark: '', method: 'manual', time: iso(950), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(940), end: iso(870), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14250, photo: '', remark: '', method: 'manual', time: iso(850), by: 'Mahesh (Kata)' },
+    final: { weight: 14250, photo: '', remark: '', method: 'manual', time: iso(850), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 20.45, rate: 53000, basic: 1083850, gauge: 0, extra: 0, freight: 21000, other: 0,
       taxable: 1104850, gstPct: 18, gstAmt: 198873, total: 1303723,
@@ -802,9 +802,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 17, planQty: 17 }],
     targetHours: 3, freight: 12800,
     gateIn: { time: iso(1110), by: 'Suresh (Gate)', biltyNo: 'BHS-55390', invoiceNo: 'BHS/INV/1200', ewayBill: 'EWB8812200' },
-    tare: { weight: 31800, photo: '', remark: '', method: 'manual', time: iso(1100), by: 'Mahesh (Kata)' },
+    tare: { weight: 31800, photo: '', remark: '', method: 'manual', time: iso(1100), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1090), end: iso(1020), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 13800, photo: '', remark: '', method: 'manual', time: iso(1000), by: 'Mahesh (Kata)' },
+    final: { weight: 13800, photo: '', remark: '', method: 'manual', time: iso(1000), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 18, rate: 52600, basic: 946800, gauge: 0, extra: 0, freight: 12800, other: 0,
       taxable: 959600, gstPct: 18, gstAmt: 172728, total: 1132328,
@@ -821,9 +821,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 23, planQty: 23 }],
     targetHours: 3, freight: 19500,
     gateIn: { time: iso(1260), by: 'Suresh (Gate)', biltyNo: 'JCL-77310', invoiceNo: 'JCL/INV/610', ewayBill: 'EWB8812210' },
-    tare: { weight: 37900, photo: '', remark: '', method: 'manual', time: iso(1250), by: 'Mahesh (Kata)' },
+    tare: { weight: 37900, photo: '', remark: '', method: 'manual', time: iso(1250), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1240), end: iso(1170), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14600, photo: '', remark: '', method: 'manual', time: iso(1150), by: 'Mahesh (Kata)' },
+    final: { weight: 14600, photo: '', remark: '', method: 'manual', time: iso(1150), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 23.3, rate: 54400, basic: 1267520, gauge: 0, extra: 0, freight: 19500, other: 0,
       taxable: 1287020, gstPct: 18, gstAmt: 231664, total: 1518684,
@@ -841,9 +841,9 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 20, planQty: 20 }],
     targetHours: 3, freight: 18000,
     gateIn: { time: iso(2050), by: 'Suresh (Gate)', biltyNo: 'SSI-33400', invoiceNo: 'SSI/INV/260', ewayBill: 'EWB8812220' },
-    tare: { weight: 34500, photo: '', remark: '', method: 'manual', time: iso(2040), by: 'Mahesh (Kata)' },
+    tare: { weight: 34500, photo: '', remark: '', method: 'manual', time: iso(2040), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(2030), end: iso(1960), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
-    final: { weight: 14300, photo: '', remark: '', method: 'manual', time: iso(1940), by: 'Mahesh (Kata)' },
+    final: { weight: 14300, photo: '', remark: '', method: 'manual', time: iso(1940), by: 'Mahesh (Weighbridge)' },
     billing: {
       qty: 20.2, rate: 53600, basic: 1082720, gauge: 0, extra: 0, freight: 18000, other: 0,
       taxable: 1100720, gstPct: 18, gstAmt: 198130, total: 1298850,
@@ -864,7 +864,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Square Tube', size: '25x25x2.0 mm', grade: 'YST-210', reqQty: 8, planQty: 8 }],
     targetHours: 2, freight: 11500,
     gateIn: { time: iso(310), by: 'Suresh (Gate)' },
-    tare: { weight: 13900, photo: '', remark: '', method: 'manual', time: iso(300), by: 'Mahesh (Kata)' },
+    tare: { weight: 13900, photo: '', remark: '', method: 'manual', time: iso(300), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(190), by: 'Dinesh (Loading)' }, // running 3+ hrs vs 2 hr target → delay reason will be asked
   }),
   base({
@@ -875,7 +875,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'MS Round Tube', size: '40 NB', grade: 'YST-240', reqQty: 9, planQty: 9 }],
     targetHours: 2, freight: 9500,
     gateIn: { time: iso(100), by: 'Suresh (Gate)' },
-    tare: { weight: 13850, photo: '', remark: '', method: 'manual', time: iso(90), by: 'Mahesh (Kata)' },
+    tare: { weight: 13850, photo: '', remark: '', method: 'manual', time: iso(90), by: 'Mahesh (Weighbridge)' },
   }),
   base({
     id: 'p21', type: 'purchase', no: 'PUR-0021', stage: 'TARE_DONE', date: iso(150),
@@ -885,7 +885,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 22, planQty: 22 }],
     targetHours: 3, freight: 19000,
     gateIn: { time: iso(130), by: 'Suresh (Gate)', biltyNo: 'JCL-77330', invoiceNo: 'JCL/INV/640', ewayBill: 'EWB8812230' },
-    tare: { weight: 36900, photo: '', remark: '', method: 'manual', time: iso(120), by: 'Mahesh (Kata)' },
+    tare: { weight: 36900, photo: '', remark: '', method: 'manual', time: iso(120), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(60), by: 'Dinesh (Loading)' }, // 1 hr into a 3 hr unloading – on time
   }),
   base({
@@ -896,7 +896,7 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 19, planQty: 19 }],
     targetHours: 3, freight: 14000,
     gateIn: { time: iso(340), by: 'Suresh (Gate)', biltyNo: 'BHS-55420', invoiceNo: 'BHS/INV/1240', ewayBill: 'EWB8812240' },
-    tare: { weight: 33500, photo: '', remark: '', method: 'manual', time: iso(330), by: 'Mahesh (Kata)' },
+    tare: { weight: 33500, photo: '', remark: '', method: 'manual', time: iso(330), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(250), by: 'Dinesh (Loading)' }, // 4+ hrs vs 3 hr target → delay reason will be asked
   }),
   base({
@@ -907,16 +907,16 @@ const RAW_ADVICES = [
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 22, planQty: 22 }],
     targetHours: 3, freight: 23000,
     gateIn: { time: iso(880), by: 'Suresh (Gate)', biltyNo: 'SSI-33450', invoiceNo: 'SSI/INV/300', ewayBill: 'EWB8812250' },
-    tare: { weight: 36200, photo: '', remark: '', method: 'manual', time: iso(870), by: 'Mahesh (Kata)' },
-    loading: { start: iso(860), end: iso(640), delayMin: 40, delayReason: 'EOT crane breakdown, 40 min ruka', by: 'Dinesh (Loading)' },
-    final: { weight: 14600, photo: '', remark: '', method: 'manual', time: iso(620), by: 'Mahesh (Kata)' },
-    grn: { grnNo: 'GRN-2026-0023', netQty: 21.6, invoiceQty: 22, quality: 'Accepted with deviation', remark: '0.4 MT short – supplier ko debit note', time: iso(590), by: 'Rakesh (Store)' },
+    tare: { weight: 36200, photo: '', remark: '', method: 'manual', time: iso(870), by: 'Mahesh (Weighbridge)' },
+    loading: { start: iso(860), end: iso(640), delayMin: 40, delayReason: 'Crane breakdown, stopped for 40 minutes', by: 'Dinesh (Loading)' },
+    final: { weight: 14600, photo: '', remark: '', method: 'manual', time: iso(620), by: 'Mahesh (Weighbridge)' },
+    grn: { grnNo: 'GRN-2026-0023', netQty: 21.6, invoiceQty: 22, quality: 'Accepted with deviation', remark: '0.4 MT short – debit note to supplier', time: iso(590), by: 'Rakesh (Store)' },
   }),
 ];
 
 export const SEED_ADVICES = RAW_ADVICES.map(normalizeAdvice);
 // Bump whenever the demo trucks change, so browsers pick up the new set automatically.
-export const SEED_VERSION = 5;
+export const SEED_VERSION = 6;
 
 // ═══ Sales Orders & Purchase Indents (one list, `type` = subsystem) ═══
 // Sales Order status: 'pending' (Order Approval) | 'approved' | 'rejected'. Older orders with no status count as approved.
@@ -962,7 +962,7 @@ export const SEED_ORDERS = [
     id: 'o2', type: 'sales', no: 'SO/26/121', date: day(-2), party: 'Balaji Infra Pvt Ltd', acName: 'Balaji Infra – Bilaspur',
     custRef: 'BIPL/4410', salesPerson: 'Ramesh (Sales)', billingInfo: BALAJI, shipTo: 'Bilaspur, CG',
     items: [{ desc: 'MS Rectangular Tube', size: '60x40x2.5 mm', grade: 'YST-210', qty: 24, rate: 62000 }],
-    freightTerms: 'for', deliveryDate: day(5), paymentTerms: '50% advance', remarks: 'Do truck me bhejna hai', by: 'Ramesh (Sales)',
+    freightTerms: 'for', deliveryDate: day(5), paymentTerms: '50% advance', remarks: 'Send in two trucks', by: 'Ramesh (Sales)',
   },
   {
     id: 'o3', type: 'sales', no: 'SO/26/140', date: day(0), party: 'Om Hardware', acName: 'Om Hardware – Durg',
@@ -980,20 +980,20 @@ export const SEED_ORDERS = [
 
   {
     id: 'i1', type: 'purchase', no: 'IND/26/001', date: day(-5), dept: 'Production', by: 'Rakesh (Store)', requiredBy: day(1), priority: 'Urgent',
-    purpose: 'Tube mill line-2 ke liye coil', suggestedSupplier: 'Shyam Steel Industries',
+    purpose: 'Coil for tube mill line-2', suggestedSupplier: 'Shyam Steel Industries',
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', qty: 20 }],
     status: 'po', approval: { by: 'Admin', time: iso(5000), remark: 'OK' },
     po: { no: 'PO/26/052', supplier: 'Shyam Steel Industries', acName: 'Shyam Steel – Durgapur', rate: 53700, freightTerms: 'for', by: 'Admin', time: iso(4800) },
   },
   {
     id: 'i2', type: 'purchase', no: 'IND/26/002', date: day(-2), dept: 'Production', by: 'Rakesh (Store)', requiredBy: day(4), priority: 'Normal',
-    purpose: 'Next week ka stock', suggestedSupplier: 'Jindal Coils Ltd',
+    purpose: 'Stock for next week', suggestedSupplier: 'Jindal Coils Ltd',
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', qty: 25 }],
     status: 'approved', approval: { by: 'Admin', time: iso(1500), remark: 'Rate compare karke PO do' },
   },
   {
     id: 'i3', type: 'purchase', no: 'IND/26/003', date: day(0), dept: 'Maintenance', by: 'Rakesh (Store)', requiredBy: day(3), priority: 'Normal',
-    purpose: 'Packing ke liye strap', suggestedSupplier: '',
+    purpose: 'Strap for packing', suggestedSupplier: '',
     items: [{ desc: 'MS Packing Strap', size: '32 mm', grade: '', qty: 1.5 }],
     status: 'pending',
   },

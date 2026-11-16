@@ -10,12 +10,12 @@ export const toLocalInput = (iso) => {
 };
 // Purchase: supplier's bilty arrives with the truck, recorded at Gate-In. Sales: generated at Dispatch OK.
 export const biltyOf = (a) => (a.type === 'purchase' ? a.gateIn?.biltyNo : a.dispatch?.biltyNo) || '';
-export const biltyPending = (a) => (a.type === 'purchase' ? 'Gate-In par milegi' : 'Dispatch me banegi');
+export const biltyPending = (a) => (a.type === 'purchase' ? 'Issued at Gate-In' : 'Created at Dispatch');
 export const kg =(n) => (n || n === 0 ? Number(n).toLocaleString('en-IN') + ' kg' : '—');
 // Net weight is known only when both weights were entered manually (photo-only slips carry no number).
 export const netOf = (a) =>
   typeof a.final?.weight === 'number' && typeof a.tare?.weight === 'number' ? Math.abs(a.final.weight - a.tare.weight) : null;
-export const netText = (a) => (netOf(a) != null ? kg(netOf(a)) : 'Slip photo dekho');
+export const netText = (a) => (netOf(a) != null ? kg(netOf(a)) : 'See slip photo');
 const wtText = (r) => (!r ? '—' : r.method === 'photo' ? 'Slip photo' : kg(r.weight));
 export const plannedTotal = (a) => a.items.reduce((s, i) => s + Number(i.planQty || 0), 0);
 // What actually went on / came off the truck: `loadQty` is set at Loading/Unloading end (edited items,
@@ -176,13 +176,13 @@ export function Timeline({ a }) {
   const steps = [
     { t: `Advice (${a.no}) created`, time: a.date, by: '', done: true },
     { t: `Verification – Gate-In${a.type === 'purchase' && a.gateIn?.biltyNo ? ` · Bilty ${a.gateIn.biltyNo}` : ''}`, time: a.gateIn?.time, by: a.gateIn?.by, done: !!a.gateIn },
-    { t: `1st Weighment (${a.type === 'purchase' ? 'bhari gaadi' : 'khaali gaadi'}) – ${wtText(a.tare)}`, time: a.tare?.time, by: a.tare?.by, note: a.tare?.remark, img: a.tare?.photo, done: !!a.tare },
+    { t: `1st Weighment (${a.type === 'purchase' ? 'loaded vehicle' : 'empty vehicle'}) – ${wtText(a.tare)}`, time: a.tare?.time, by: a.tare?.by, note: a.tare?.remark, img: a.tare?.photo, done: !!a.tare },
     { t: `${act} ${a.loading?.end ? `(${fmtDT(a.loading.start)} → ${fmtDT(a.loading.end)})` : a.loading?.start ? `(started ${fmtDT(a.loading.start)}, in progress)` : ''}`, time: a.loading?.end, by: a.loading?.endBy || a.loading?.by, note: a.loading?.delayMin > 0 ? `Delay ${a.loading.delayMin} min – ${a.loading.delayReason}` : '', red: a.loading?.delayMin > 0, done: !!a.loading?.end },
-    { t: `Final Weighment (${a.type === 'purchase' ? 'khaali gaadi' : 'bhari gaadi'}) – ${wtText(a.final)}${net != null ? ` · Net ${kg(net)}` : ''}`, time: a.final?.time, by: a.final?.by, note: a.final?.remark, img: a.final?.photo, done: !!a.final },
+    { t: `Final Weighment (${a.type === 'purchase' ? 'empty vehicle' : 'loaded vehicle'}) – ${wtText(a.final)}${net != null ? ` · Net ${kg(net)}` : ''}`, time: a.final?.time, by: a.final?.by, note: a.final?.remark, img: a.final?.photo, done: !!a.final },
     ...(a.type === 'purchase'
       ? [
           { t: `Material Receipt (GRN)${a.grn ? ` ${a.grn.grnNo} · ${a.grn.quality}` : ''}`, time: a.grn?.time, by: a.grn?.by, note: a.grn?.remark, done: !!a.grn },
-          { t: 'Gate-Out (khaali gaadi)', time: a.gateOut?.time, by: a.gateOut?.by, done: !!a.gateOut },
+          { t: 'Gate-Out (empty vehicle)', time: a.gateOut?.time, by: a.gateOut?.by, done: !!a.gateOut },
         ]
       : [
           { t: `Billing${a.billing ? ` · Invoice ${a.billing.invoiceNo} · E-Way ${a.billing.ewayBill}` : ''}`, time: a.billing?.time, by: a.billing?.by, note: a.billing?.remark, done: !!a.billing },

@@ -39,7 +39,7 @@ export default function StagePage({ sub, module, title, subtitle, tabs }) {
 
       <div className="card">
         {rows.length === 0 ? (
-          <Empty text="Koi truck nahi hai." />
+          <Empty text="No trucks." />
         ) : (
           <table className="tbl">
             <thead>
@@ -57,7 +57,7 @@ export default function StagePage({ sub, module, title, subtitle, tabs }) {
                   <td className="acts">
                     <button className="btn sm" onClick={() => setSel({ id: a.id, mode: 'view' })}>View</button>
                     {!tab.readOnly && (
-                      <button className="btn primary sm" disabled={!canAct} title={canAct ? '' : 'Is step ka action permission nahi hai'}
+                      <button className="btn primary sm" disabled={!canAct} title={canAct ? '' : 'You do not have permission for this step'}
                         onClick={() => setSel({ id: a.id, mode: 'action' })}>Action</button>
                     )}
                   </td>

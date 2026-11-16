@@ -36,7 +36,7 @@ function ModuleRoute() {
   const module = SUBSYSTEMS.some((s) => s.key === sub) ? moduleOfSlug(sub, slug) : null;
   const Page = module && PAGES[module];
   if (!Page) return <Navigate to="/" replace />;
-  if (!can(sub, module, 'view')) return <div className="alert">Aapke paas is page ka access nahi hai. Admin se Master → Permissions me access maangein.</div>;
+  if (!can(sub, module, 'view')) return <div className="alert">You do not have access to this page. Ask the admin to grant access in Master → Permissions.</div>;
   return <Page sub={sub} />;
 }
 

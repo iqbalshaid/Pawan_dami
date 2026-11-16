@@ -3,8 +3,8 @@ import { useStore } from '../store.jsx';
 import { INDENT_STATUS, orderProgress, termsText } from '../data.js';
 import { Empty, Field, Modal, PageHead, fmtDT } from '../components/ui.jsx';
 
-// Sales → Sales Order (customer ka order, ek hi page). Purchase → Indent → Approval → PO (teen pages, neeche).
-// Advice banate waqt inhi records se party / items / rate bhar sakte hain.
+// Sales → Sales Order (customer order, single page). Purchase → Indent → Approval → PO (three pages, below).
+// When creating an advice, party / items / rate can be filled from these records.
 export const OrderPage = () => <SalesOrderPage />;
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
@@ -66,7 +66,7 @@ export function OrderApprovalPage() {
 
   return (
     <>
-      <PageHead title="Sales · Order Approval" sub="Naye Sales Order ka rate, party aur payment terms dekh kar Approve / Reject karo. Sirf approved order par Loading Advice banega." />
+      <PageHead title="Sales · Order Approval" sub="Review the rate, party and payment terms of new Sales Orders, then Approve or Reject. A Loading Advice can be created only for approved orders." />
       <div className="tabs">
         {tabs.map((t) => (
           <button key={t.key} className={t.key === tabKey ? 'on' : ''} onClick={() => setTabKey(t.key)}>
@@ -75,7 +75,7 @@ export function OrderApprovalPage() {
         ))}
       </div>
       <div className="card">
-        {rows.length === 0 ? <Empty text="Koi order nahi hai." /> : (
+        {rows.length === 0 ? <Empty text="No orders found." /> : (
           <table className="tbl">
             <thead><tr><th>SO No.</th><th>Customer</th><th>Material</th><th>Qty</th><th>Value</th><th>Payment Terms</th><th>Created By</th><th>Status</th><th /></tr></thead>
             <tbody>
@@ -118,12 +118,12 @@ function SalesOrderPage() {
     <>
       <PageHead
         title="Sales · Sales Order"
-        sub="Customer ka order yahan darj karo. Loading Advice banate waqt isi Sales Order ko chun kar party, items aur rate apne aap bhar jayenge."
+        sub="Enter the customer order here. When creating a Loading Advice, select this Sales Order to fill in party, items and rate automatically."
         right={can('sales', 'order', 'create') && <button className="btn primary" onClick={() => setCreating(true)}>+ Create Sales Order</button>}
       />
       <div className="card">
         <div className="toolbar"><input placeholder="Search SO no. / customer / item…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        {rows.length === 0 ? <Empty text="Koi Sales Order nahi hai." /> : (
+        {rows.length === 0 ? <Empty text="No Sales Orders found." /> : (
           <table className="tbl">
             <thead><tr><th>SO No.</th><th>Customer</th><th>Material</th><th>Order Qty</th><th>Advice Qty</th><th>Dispatched</th><th>Delivery By</th><th>Status</th><th /></tr></thead>
             <tbody>
@@ -200,11 +200,11 @@ function SalesOrderView({ o, onClose, approve }) {
       )}
       {approving && (
         <div className="form-grid">
-          <Field label="Approval / rejection remark" span={2}><input value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="e.g. Rate theek hai / advance aane ke baad dispatch" /></Field>
+          <Field label="Approval / rejection remark" span={2}><input value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="e.g. Rate is fine / dispatch after advance is received" /></Field>
         </div>
       )}
       <h4>Advices against this order</h4>
-      {p.advices.length === 0 ? <Empty text="Abhi tak koi Loading Advice nahi bana." /> : (
+      {p.advices.length === 0 ? <Empty text="No Loading Advice created yet." /> : (
         <table className="tbl mini">
           <thead><tr><th>Advice</th><th>Truck</th><th>Plan (MT)</th><th>Gate-Out</th></tr></thead>
           <tbody>
@@ -246,7 +246,7 @@ function SalesOrderForm({ onClose }) {
   return (
     <Modal title="Create Sales Order" wide onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={save}>Save Sales Order</button></>}>
-      <p className="muted">SO number save karte hi apne aap banega. Save ke baad order Order Approval me jayega.</p>
+      <p className="muted">The SO number is generated automatically on save. After saving, the order goes to Order Approval.</p>
       <h4>1. Customer Details</h4>
       <div className="form-grid">
         {I('Order Date *', f.date, (v) => set('date', v), { type: 'date' })}
@@ -258,7 +258,7 @@ function SalesOrderForm({ onClose }) {
 
       <h4>2. Billing & Delivery</h4>
       <div className="form-grid">
-        {I('Billing Party', f.billingInfo.party, (v) => nest('party', v), { placeholder: 'Khaali = customer ka naam' })}
+        {I('Billing Party', f.billingInfo.party, (v) => nest('party', v), { placeholder: 'Leave blank to use the customer name' })}
         {I('GST No.', f.billingInfo.gst, (v) => nest('gst', v.toUpperCase()))}
         {I('Billing Address', f.billingInfo.address, (v) => nest('address', v), {}, 2)}
         {I('Ship To / Destination', f.shipTo, (v) => set('shipTo', v), {}, 2)}
@@ -269,7 +269,7 @@ function SalesOrderForm({ onClose }) {
           </select>
         </Field>
         {I('Delivery By', f.deliveryDate, (v) => set('deliveryDate', v), { type: 'date' })}
-        {I('Payment Terms', f.paymentTerms, (v) => set('paymentTerms', v), { placeholder: 'e.g. 30 din credit / Advance' }, 2)}
+        {I('Payment Terms', f.paymentTerms, (v) => set('paymentTerms', v), { placeholder: 'e.g. 30 days credit / Advance' }, 2)}
       </div>
 
       <h4>3. Items</h4>
@@ -278,7 +278,7 @@ function SalesOrderForm({ onClose }) {
         onChange={(v) => set('items', v)}
         cols={[['desc', 'Item Description *'], ['size', 'Size'], ['grade', 'Grade / Spec'], ['qty', 'Qty (MT) *', 'number'], ['rate', 'Rate (₹/MT)', 'number']]}
       />
-      <p className="muted">Total (GST / freight ke bina): <b>{inr(total)}</b></p>
+      <p className="muted">Total (excluding GST / freight): <b>{inr(total)}</b></p>
 
       <h4>4. Remarks</h4>
       <div className="form-grid">
@@ -297,13 +297,13 @@ const PRIORITIES = ['Normal', 'Urgent'];
 export const IndentPage = () => (
   <IndentQueue
     title="Purchase Indent" create
-    subtitle="Department material ki maang (indent) yahan banata hai. Iske baad Indent Approval → Purchase Order page par aage badhega."
+    subtitle="The department raises its material request (indent) here. It then moves to Indent Approval, followed by Purchase Order."
   />
 );
 export const IndentApprovalPage = () => (
   <IndentQueue
     title="Indent Approval" step="indentapproval"
-    subtitle="Naye indent approve ya reject karo."
+    subtitle="Approve or reject new indents."
     tabs={[
       { key: 'pending', label: 'Pending Approval', statuses: ['pending'], pending: true },
       { key: 'done', label: 'History', statuses: ['approved', 'po', 'rejected'] },
@@ -313,7 +313,7 @@ export const IndentApprovalPage = () => (
 export const PoPage = () => (
   <IndentQueue
     title="Purchase Order" step="po"
-    subtitle="Approved indent ka PO banao (supplier, rate, EX/FOR). PO banne ke baad Unloading Advice me ye PO chun sakte ho."
+    subtitle="Create a PO for an approved indent (supplier, rate, EX/FOR). Once the PO is created, it can be selected in an Unloading Advice."
     tabs={[
       { key: 'pending', label: 'PO Pending', statuses: ['approved'], pending: true },
       { key: 'done', label: 'PO Created', statuses: ['po'] },
@@ -350,7 +350,7 @@ function IndentQueue({ title, subtitle, create, step, tabs }) {
         </div>
       )}
       <div className="card">
-        {rows.length === 0 ? <Empty text="Koi indent nahi hai." /> : (
+        {rows.length === 0 ? <Empty text="No indents found." /> : (
           <table className="tbl">
             <thead><tr><th>Indent No.</th><th>Department</th><th>Indented By</th><th>Material</th><th>Qty</th><th>Required By</th><th>Priority</th><th>PO No.</th><th>Status</th><th /></tr></thead>
             <tbody>
@@ -430,7 +430,7 @@ function IndentView({ o, act, onClose }) {
             <Row k="Rate (₹/MT)" v={o.po.rate ? Number(o.po.rate).toLocaleString('en-IN') : ''} />
             <Row k="Freight Terms" v={termsText('purchase', o.po.freightTerms)} />
             <Row k="PO By" v={`${o.po.by} · ${fmtDT(o.po.time)}`} />
-            <Row k="Unloading Advices" v={advices.map((a) => a.no).join(', ') || 'Abhi nahi'} />
+            <Row k="Unloading Advices" v={advices.map((a) => a.no).join(', ') || 'None yet'} />
           </div>
         </>
       )}
@@ -442,7 +442,7 @@ function IndentView({ o, act, onClose }) {
       )}
       {makingPo && (
         <>
-          <h4>PO banao</h4>
+          <h4>Create PO</h4>
           <div className="form-grid">
             <Field label="PO No. *"><input value={po.no} placeholder="PO/26/060" onChange={(e) => setPo({ ...po, no: e.target.value.toUpperCase() })} /></Field>
             <Field label="Supplier *"><input value={po.supplier} placeholder={o.suggestedSupplier} onChange={(e) => setPo({ ...po, supplier: e.target.value })} /></Field>
@@ -483,7 +483,7 @@ function IndentForm({ onClose }) {
   return (
     <Modal title="Create Purchase Indent" wide onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={save}>Submit Indent</button></>}>
-      <p className="muted">Indent number apne aap banega. Submit ke baad ye approval ke liye jayega.</p>
+      <p className="muted">The indent number is generated automatically. After submitting, it goes for approval.</p>
       <h4>1. Indent Details</h4>
       <div className="form-grid">
         {I('Indent Date *', f.date, (v) => set('date', v), { type: 'date' })}
@@ -496,7 +496,7 @@ function IndentForm({ onClose }) {
           </select>
         </Field>
         {I('Suggested Supplier', f.suggestedSupplier, (v) => set('suggestedSupplier', v))}
-        {I('Purpose / Kis kaam ke liye', f.purpose, (v) => set('purpose', v), {}, 2)}
+        {I('Purpose / Reason for request', f.purpose, (v) => set('purpose', v), {}, 2)}
       </div>
       <h4>2. Material Required</h4>
       <ItemTable
