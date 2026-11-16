@@ -10,9 +10,10 @@ import {
   GatePassPage, GrnPage, LoadingPage, VerificationPage, WeighmentPage,
 } from './pages/Stages.jsx';
 import Permissions from './pages/Permissions.jsx';
+import { IndentApprovalPage, IndentPage, OrderApprovalPage, OrderPage, PoPage } from './pages/Orders.jsx';
 
 const PAGES = {
-  inventory: InventoryPage, gatein: VerificationPage, weighin: WeighmentPage, loading: LoadingPage,
+  order: OrderPage, orderapproval: OrderApprovalPage, indent: IndentPage, indentapproval: IndentApprovalPage, po: PoPage, inventory: InventoryPage, gatein: VerificationPage, weighin: WeighmentPage, loading: LoadingPage,
   weighout: FinalWeighmentPage, billing: BillingPage, docverify: DocVerifyPage, gatepass: GatePassPage,
   clearance: ClearancePage, grn: GrnPage, gateout: GateOutPage, bilty: BiltyPage,
 };
@@ -20,8 +21,13 @@ const PAGES = {
 // Sales: our bilty is generated with the Gate Pass, so its page sits right after it.
 // Purchase: no bilty page – the supplier's LR no. + photo are recorded at Gate-In.
 const ORDER = {
-  sales: ['inventory', 'gatein', 'weighin', 'loading', 'weighout', 'billing', 'docverify', 'gatepass', 'bilty', 'clearance', 'gateout'],
-  purchase: ['inventory', 'gatein', 'weighin', 'loading', 'weighout', 'grn', 'gateout'],
+  sales: ['order', 'orderapproval', 'inventory', 'gatein', 'weighin', 'loading', 'weighout', 'billing', 'docverify', 'gatepass', 'bilty', 'clearance', 'gateout'],
+  purchase: ['indent', 'indentapproval', 'po', 'inventory', 'gatein', 'weighin', 'loading', 'weighout', 'grn', 'gateout'],
+};
+// Pages folded under one collapsible heading inside a subsystem (down arrow opens them).
+const SUB_GROUPS = {
+  sales: [{ title: 'Order', keys: ['order', 'orderapproval'] }],
+  purchase: [{ title: 'Indent & PO', keys: ['indent', 'indentapproval', 'po'] }],
 };
 
 function ModuleRoute() {
@@ -34,11 +40,12 @@ function ModuleRoute() {
   return <Page sub={sub} />;
 }
 
-function Group({ title, id, count, children }) {
+// `paths` (optional) = the links inside; the group starts open when one of them is the current page.
+function Group({ title, id, count, children, paths, nested }) {
   const { pathname } = useLocation();
-  const [open, setOpen] = useState(pathname.startsWith('/' + id + '/'));
+  const [open, setOpen] = useState(paths ? paths.includes(pathname) : pathname.startsWith('/' + id + '/'));
   return (
-    <div className="grp">
+    <div className={`grp${nested ? ' sub' : ''}`}>
       <button className="grp-t" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span>{title}{count > 0 && <b className="nav-count">{count}</b>}</span>
         <svg className={open ? 'open' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -70,17 +77,37 @@ export default function App() {
             const order = ORDER[s.key];
             const mods = order.map((k) => MODULES.find((m) => m.key === k)).filter((m) => can(s.key, m.key, 'view'));
             if (!mods.length) return null;
-            // Badge = trucks waiting at that step
-            const counts = Object.fromEntries(mods.map((m) => [m.key, pendingCount(state.advices, s.key, m.key)]));
+            // Approval / PO badges = indents waiting at that step; truck pages count trucks.
+            const count = (m) => {
+              const st = { orderapproval: 'pending', indentapproval: 'pending', po: 'approved' }[m.key];
+              if (st) return state.orders.filter((o) => o.type === s.key && o.status === st).length;
+              return ['order', 'indent'].includes(m.key) ? 0 : pendingCount(state.advices, s.key, m.key);
+            };
+            const counts = Object.fromEntries(mods.map((m) => [m.key, count(m)]));
             const total = Object.values(counts).reduce((x, y) => x + y, 0);
+            const link = (m) => (
+              <NavLink key={m.key} to={`/${s.key}/${slugOf(s.key, m.key)}`}>
+                <span>{nameOf(s.key, m.key)}</span>
+                {counts[m.key] > 0 && <b className="nav-count" title="Pending">{counts[m.key]}</b>}
+              </NavLink>
+            );
+            const groups = SUB_GROUPS[s.key] || [];
+            const groupOf = (k) => groups.find((g) => g.keys.includes(k));
             return (
               <Group key={s.key} title={s.label} id={s.key} count={total}>
-                {mods.map((m) => (
-                  <NavLink key={m.key} to={`/${s.key}/${slugOf(s.key, m.key)}`}>
-                    <span>{nameOf(s.key, m.key)}</span>
-                    {counts[m.key] > 0 && <b className="nav-count" title="Pending">{counts[m.key]}</b>}
-                  </NavLink>
-                ))}
+                {mods.map((m) => {
+                  const g = groupOf(m.key);
+                  if (!g) return link(m);
+                  const inner = mods.filter((x) => g.keys.includes(x.key));
+                  if (inner[0] !== m) return null; // whole group is drawn at its first visible page
+                  return (
+                    <Group key={g.title} nested title={g.title}
+                      count={inner.reduce((n, x) => n + counts[x.key], 0)}
+                      paths={inner.map((x) => `/${s.key}/${slugOf(s.key, x.key)}`)}>
+                      {inner.map(link)}
+                    </Group>
+                  );
+                })}
               </Group>
             );
           })}

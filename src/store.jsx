@@ -1,5 +1,12 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
-import { MODULES, SEED_ADVICES, SEED_USERS, SEED_VERSION, SUBSYSTEMS, labelsFor, modulesFor, normalizeAdvice, userCan } from './data.js';
+import { MODULES, SEED_ADVICES, SEED_ORDERS, SEED_USERS, SEED_VERSION, SUBSYSTEMS, labelsFor, modulesFor, normalizeAdvice, userCan } from './data.js';
+
+// Next running number for a Sales Order (SO/26/141) or Indent (IND/26/004) – one series per prefix + year.
+const nextOrderNo = (orders, type) => {
+  const prefix = `${type === 'purchase' ? 'IND' : 'SO'}/${String(new Date().getFullYear()).slice(-2)}/`;
+  const max = orders.filter((o) => o.no.startsWith(prefix)).reduce((m, o) => Math.max(m, Number(o.no.slice(prefix.length)) || 0), 0);
+  return prefix + String(max + 1).padStart(3, '0');
+};
 
 // Advices created in the app get id 'a' + Date.now(); everything else is demo data.
 const isUserCreated = (a) => /^a\d{13}$/.test(a.id);
@@ -37,11 +44,12 @@ const migrate = (saved) => {
   const advices = saved.seedVersion === SEED_VERSION
     ? saved.advices
     : [...saved.advices.filter(isUserCreated), ...SEED_ADVICES];
-  const { orders: _legacyOrders, ...rest } = saved; // Sales Order / Indent were removed – drop old saved copies
-  return { ...rest, users, advices: advices.map(normalizeAdvice), seedVersion: SEED_VERSION };
+  // Saves from before Sales Order / Indent existed get the demo orders.
+  const orders = saved.orders || SEED_ORDERS;
+  return { ...saved, users, advices: advices.map(normalizeAdvice), orders, seedVersion: SEED_VERSION };
 };
 
-const fresh = () => ({ users: SEED_USERS, advices: SEED_ADVICES, currentUserId: 'u1', seedVersion: SEED_VERSION });
+const fresh = () => ({ users: SEED_USERS, advices: SEED_ADVICES, orders: SEED_ORDERS, currentUserId: 'u1', seedVersion: SEED_VERSION });
 
 const load = () => {
   try {
@@ -121,6 +129,14 @@ export function StoreProvider({ children }) {
         });
         return created;
       },
+      // Sales Order (type 'sales') or Purchase Indent (type 'purchase'); number is assigned here.
+      createOrder: (type, data) =>
+        setState((s) => ({
+          ...s,
+          orders: [{ ...data, id: 'o' + Date.now(), type, no: nextOrderNo(s.orders, type) }, ...s.orders],
+        })),
+      updateOrder: (id, patch) =>
+        setState((s) => ({ ...s, orders: s.orders.map((o) => (o.id === id ? { ...o, ...patch } : o)) })),
       updateAdvice: (id, patch) =>
         setState((s) => ({ ...s, advices: s.advices.map((a) => (a.id === id ? { ...a, ...patch } : a)) })),
       resetDemo: () => {

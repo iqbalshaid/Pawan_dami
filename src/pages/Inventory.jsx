@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../store.jsx';
-import { labelsFor, termsText } from '../data.js';
+import { actOf, labelsFor, soApproved, termsText } from '../data.js';
 import { AdviceSummary, Badge, Empty, Field, Modal, PageHead, Timeline, biltyOf, biltyPending, fmtDT, materialText, plannedTotal } from '../components/ui.jsx';
 
 const emptyItem = { desc: '', size: '', grade: '', reqQty: '', planQty: '' };
@@ -70,11 +70,38 @@ export function InventoryPage({ sub }) {
   );
 }
 
+// Sales: any Sales Order. Purchase: only indents that already have a PO (the PO no. is the advice's order ref).
+const sourcesFor = (sub, orders) =>
+  sub === 'purchase'
+    ? orders.filter((o) => o.type === 'purchase' && o.status === 'po').map((o) => ({ ref: o.po.no, label: `${o.po.no} – ${o.po.supplier} (Indent ${o.no})`, o }))
+    : orders.filter((o) => o.type === 'sales' && soApproved(o)).map((o) => ({ ref: o.no, label: `${o.no} – ${o.party}`, o }));
+
+// Fields an advice takes over from the chosen Sales Order / PO.
+const fromOrder = (sub, o, f) => {
+  const items = o.items.map((i) => ({ desc: i.desc, size: i.size, grade: i.grade, reqQty: i.qty, planQty: i.qty }));
+  const reqQty = o.items.reduce((s, i) => s + Number(i.qty || 0), 0);
+  if (sub === 'purchase') {
+    return { ...f, orderRef: o.po.no, party: o.po.supplier, acName: o.po.acName || '', rate: o.po.rate || '', reqQty, items, freightTerms: o.po.freightTerms || f.freightTerms };
+  }
+  return {
+    ...f, orderRef: o.no, party: o.party, acName: o.acName || '', rate: o.items[0]?.rate || '', reqQty, items,
+    freightTerms: o.freightTerms || f.freightTerms,
+    billingInfo: { ...f.billingInfo, party: o.billingInfo?.party || o.party, address: o.billingInfo?.address || '', gst: o.billingInfo?.gst || '' },
+    transport: { ...f.transport, to: o.shipTo || f.transport.to },
+    remarks: { ...f.remarks, customer: o.remarks || f.remarks.customer },
+  };
+};
+
 function CreateModal({ sub, onClose }) {
-  const { createAdvice } = useStore();
+  const { createAdvice, state } = useStore();
   const L = labelsFor(sub);
   const [f, setF] = useState(blank(sub));
-  const act = L.act; // Sales = Loading, Purchase = Unloading
+  const sources = sourcesFor(sub, state.orders || []);
+  const pickOrder = (ref) => {
+    const src = sources.find((x) => x.ref === ref);
+    if (src) setF((s) => fromOrder(sub, src.o, s));
+  };
+  const act = f.purpose === 'unloading' ? 'Unloading' : 'Loading'; // what this truck is actually here for
   // does the freight cost sit with us? (Sales FOR / Purchase EX)
   const weBear = sub === 'purchase' ? f.freightTerms === 'ex' : f.freightTerms === 'for';
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -100,11 +127,28 @@ function CreateModal({ sub, onClose }) {
   return (
     <Modal title={`Create ${L.advice}`} wide onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={save}>Create Advice</button></>}>
+      <h4>Truck Purpose</h4>
+      <div className="form-grid">
+        <Field label="Truck aaya hai kis liye? *" hint="Default subsystem ke hisaab se hai, zaroorat ho to badal sakte ho">
+          <select value={f.purpose} onChange={(e) => set('purpose', e.target.value)}>
+            <option value="loading">Loading</option>
+            <option value="unloading">Unloading</option>
+          </select>
+        </Field>
+      </div>
+
       <h4>1. {L.party} Details</h4>
       <div className="form-grid">
+        <Field label={sub === 'purchase' ? 'PO (Indent) se bharo' : 'Sales Order se bharo'} span={2}
+          hint={sources.length ? 'Chunte hi party, items, rate aur billing bhar jayenge – baad me badal sakte ho' : sub === 'purchase' ? 'Abhi koi indent PO tak nahi pahuncha' : 'Abhi koi Sales Order nahi hai'}>
+          <select value={sources.some((x) => x.ref === f.orderRef) ? f.orderRef : ''} onChange={(e) => pickOrder(e.target.value)} disabled={!sources.length}>
+            <option value="">— Haath se bharo —</option>
+            {sources.map((x) => <option key={x.ref} value={x.ref}>{x.label}</option>)}
+          </select>
+        </Field>
         {I(`${L.party} / Party Name *`, f.party, (v) => set('party', v))}
         {I('A/c Name', f.acName, (v) => set('acName', v))}
-        {I(sub === 'purchase' ? 'PO / Order Ref *' : 'Sales Order Ref *', f.orderRef, (v) => set('orderRef', v))}
+        {I('Order / Sales Order Ref *', f.orderRef, (v) => set('orderRef', v))}
         {I('Rate (₹/MT)', f.rate, (v) => set('rate', v), { type: 'number' })}
         {I('Required Quantity (MT)', f.reqQty, (v) => set('reqQty', v), { type: 'number' })}
       </div>
