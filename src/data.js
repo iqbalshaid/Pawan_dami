@@ -7,7 +7,7 @@ export const SUBSYSTEMS = [
 
 // One subsystem per step.
 // Sales (loaded truck goes out):  Advice → Verification → Weighment → Loading → Final Weighment
-//   → Billing → Document Verification → Gate Pass → Security Clearance → Gate-Out
+//   → Billing → Document Verification (Gate Pass generated here) → Security Clearance → Gate-Out
 // Purchase (truck unloads, leaves EMPTY – supplier already billed, nothing of ours travels with it):
 //   Advice → Verification → Weighment → Unloading → Final Weighment → Material Receipt (GRN) → Gate-Out
 // `only` limits a module to one subsystem.
@@ -25,7 +25,6 @@ export const MODULES = [
   { key: 'weighout', label: 'Final Weighment', actions: ['view', 'action'] },
   { key: 'billing', label: 'Billing', actions: ['view', 'action'], only: 'sales' },
   { key: 'docverify', label: 'Document Verification', actions: ['view', 'action'], only: 'sales' },
-  { key: 'gatepass', label: 'Gate Pass', actions: ['view', 'action'], only: 'sales' },
   { key: 'clearance', label: 'Security Clearance', actions: ['view', 'action'], only: 'sales' },
   { key: 'grn', label: 'Material Receipt (GRN)', actions: ['view', 'action'], only: 'purchase' },
   { key: 'gateout', label: 'Gate-Out', actions: ['view', 'action'] },
@@ -92,7 +91,6 @@ export const nameOf = (sub, key) => {
     weighout: 'Final Weighment',
     billing: 'Billing',
     docverify: 'Document Verification',
-    gatepass: 'Gate Pass',
     clearance: 'Security Clearance',
     grn: 'Material Receipt (GRN)',
     gateout: 'Gate-Out',
@@ -104,7 +102,7 @@ export const slugOf = (sub, key) => slugify(nameOf(sub, key));
 export const moduleOfSlug = (sub, slug) => modulesFor(sub).map((m) => m.key).find((k) => slugOf(sub, k) === slug);
 
 // SOP: Advice → Verification → Weighment → Loading → Final Weighment → Billing
-//      → Document Verification → Gate Pass → Security Clearance → Gate-Out
+//      → Document Verification (+ Gate Pass) → Security Clearance → Gate-Out
 // Each stage names the step that is PENDING on that truck right now.
 // Each stage names the chain link that is PENDING on that truck. Tone = responsible department.
 export const STAGES = {
@@ -114,14 +112,14 @@ export const STAGES = {
   LOADED: { label: 'Final Weighment', tone: 'blue' },
   FINAL_DONE: { label: 'Billing', tone: 'purple' },
   BILLED: { label: 'Document Verification', tone: 'indigo' },
-  DOC_OK: { label: 'Gate Pass', tone: 'indigo' },
+  DOC_OK: { label: 'Gate Pass', tone: 'indigo' }, // legacy only – verification now issues the gate pass (→ GATEPASS)
   GATEPASS: { label: 'Security Clearance', tone: 'teal' },
   CLEARED: { label: 'Gate-Out', tone: 'teal' },
   OUT: { label: 'Vehicle Released', tone: 'green' },
 };
 
 // The process-control chain per subsystem, shown on the dashboard.
-export const SOP_FLOW = ['Advice', 'Verification', 'Weighment', 'Loading', 'Final Weighment', 'Billing', 'Document Verification', 'Gate Pass', 'Security Clearance', 'Gate-Out'];
+export const SOP_FLOW = ['Advice', 'Verification', 'Weighment', 'Loading', 'Final Weighment', 'Billing', 'Document Verification', 'Security Clearance', 'Gate-Out'];
 export const PURCHASE_FLOW = ['Advice', 'Verification', 'Weighment', 'Unloading', 'Final Weighment', 'Material Receipt (GRN)', 'Gate-Out'];
 export const STAGE_ORDER = Object.keys(STAGES);
 
@@ -137,7 +135,7 @@ export const stageLabel = (stage, sub) => (sub === 'purchase' && stage === 'FINA
  * data. Those move to Gate-Out pending with a GRN record built from the weighment.
  */
 export function normalizeAdvice(a) {
-  if (a.type !== 'purchase') return a;
+  if (a.type !== 'purchase') return a; // sales DOC_OK leftovers are handled by issueLegacyGatePasses
   const { billing, docVerify, dispatch, clearance, ...rest } = a;
   const stage = PURCHASE_SKIP.includes(a.stage) ? 'CLEARED' : a.stage;
   let grn = a.grn;
@@ -153,12 +151,46 @@ export function normalizeAdvice(a) {
 }
 // All stages strictly after `stage` – used to keep a completed step's History tab
 // visible no matter how far the truck has since moved along the chain.
+// Next Gate Pass / Bilty numbers – one running series over every truck that already has one.
+export const nextDispatchNos = (advices) => {
+  const y = new Date().getFullYear();
+  const seq = String(advices.filter((x) => x.dispatch).length + 1).padStart(4, '0');
+  return { gatePassNo: `GP-${y}-${seq}`, biltyNo: `LR-${y}-${seq}` };
+};
+// Sales trucks saved at DOC_OK (when Gate Pass was its own step) get their gate pass now,
+// issued by whoever verified the documents, and move on to Security Clearance.
+export const issueLegacyGatePasses = (advices) =>
+  advices.reduce((out, a, i) => {
+    if (a.type !== 'sales' || a.stage !== 'DOC_OK') return [...out, a];
+    const nos = nextDispatchNos([...out, ...advices.slice(i + 1)]);
+    const time = a.docVerify?.time || new Date().toISOString();
+    return [...out, { ...a, stage: 'GATEPASS', dispatch: { remark: '', time, by: a.docVerify?.by || '', ...nos } }];
+  }, []);
+
+// ═══ TAT (turn-around time) – set in Master → TAT Settings ═══
+// After the final weighment the truck must leave the plant within `exitMin` minutes.
+// If it is late, it must be weighed again before Gate-Out; every re-weighment restarts the clock.
+export const DEFAULT_TAT = { sales: { exitMin: 60 }, purchase: { exitMin: 60 } };
+export const tatOf = (settings, sub) => ({ ...DEFAULT_TAT[sub], ...(settings?.tat?.[sub] || {}) });
+// Time of the latest weighment (re-weighment if any, else the final weighment).
+export const lastWeighTime = (a) => a.reweighs?.at(-1)?.time || a.final?.time;
+/** Exit-TAT status of a truck that is inside the plant after its final weighment (null otherwise). */
+export const exitTat = (a, settings, now = Date.now()) => {
+  const from = lastWeighTime(a);
+  if (!from || a.stage === 'OUT') return null;
+  const limitMin = Number(tatOf(settings, a.type).exitMin) || 0;
+  if (!limitMin) return null; // TAT switched off
+  const elapsedMin = Math.floor((now - new Date(from)) / 60000);
+  return { from, limitMin, elapsedMin, late: elapsedMin > limitMin, overMin: Math.max(0, elapsedMin - limitMin), leftMin: Math.max(0, limitMin - elapsedMin) };
+};
+export const minText = (m) => `${Math.floor(m / 60) ? Math.floor(m / 60) + ' hr ' : ''}${m % 60} min`;
+
 export const afterStage = (stage) => STAGE_ORDER.slice(STAGE_ORDER.indexOf(stage) + 1);
 
 // Which page/module acts on a truck at each stage (purchase: GRN after final weighment).
 export const STAGE_MODULE = {
   CREATED: 'gatein', GATED_IN: 'weighin', TARE_DONE: 'loading', LOADED: 'weighout', FINAL_DONE: 'billing',
-  BILLED: 'docverify', DOC_OK: 'gatepass', GATEPASS: 'clearance', CLEARED: 'gateout',
+  BILLED: 'docverify', DOC_OK: 'docverify', GATEPASS: 'clearance', CLEARED: 'gateout',
 };
 export const moduleAt = (stage, sub) => (sub === 'purchase' && stage === 'FINAL_DONE' ? 'grn' : STAGE_MODULE[stage]);
 // How many trucks of this subsystem are waiting on a module right now (sidebar badge).
@@ -188,12 +220,12 @@ export const SEED_USERS = [
   { id: 'u1', name: 'Admin', role: 'admin', perms: allPerms() },
   {
     id: 'u2', name: 'Ramesh (Sales)', role: 'sales',
-    perms: mk({ 'sales.order': ['view', 'create'], 'sales.inventory': full, 'sales.bilty': ['view'], 'sales.gatepass': ['view'], 'purchase.indent': ['view'], 'purchase.inventory': full }),
+    perms: mk({ 'sales.order': ['view', 'create'], 'sales.inventory': full, 'sales.bilty': ['view'], 'purchase.indent': ['view'], 'purchase.inventory': full }),
   },
   {
     id: 'u3', name: 'Suresh (Gate)', role: 'gate',
     perms: mk({
-      'sales.gatein': ['view', 'action'], 'sales.clearance': ['view', 'action'], 'sales.gateout': ['view', 'action'], 'sales.gatepass': ['view'],
+      'sales.gatein': ['view', 'action'], 'sales.clearance': ['view', 'action'], 'sales.gateout': ['view', 'action'],
       'purchase.gatein': ['view', 'action'], 'purchase.gateout': ['view', 'action'],
     }),
   },
@@ -211,7 +243,7 @@ export const SEED_USERS = [
   {
     id: 'u6', name: 'Anil (Dispatch)', role: 'dispatch',
     perms: mk({
-      'sales.inventory': ['view'], 'sales.bilty': ['view'], 'sales.billing': ['view'], 'sales.docverify': ['view', 'action'], 'sales.gatepass': ['view', 'action'],
+      'sales.inventory': ['view'], 'sales.bilty': ['view'], 'sales.billing': ['view'], 'sales.docverify': ['view', 'action'],
     }),
   },
   {
@@ -236,7 +268,6 @@ const base = (over) => ({
   transport: { name: '', vehicle: '', driver: '', mobile: '', from: 'Urla, Raipur', to: '' },
   items: [],
   remarks: { special: '', customer: '', packing: '', handling: '' },
-  targetHours: 2,
   freight: 0,
   ...over,
 });
@@ -263,7 +294,7 @@ const RAW_ADVICES = [
     transport: { name: 'Raipur Carriers', vehicle: 'CG07 XY 4455', driver: 'Kishan', mobile: '9876500022', from: 'Urla, Raipur', to: 'Bilaspur, CG' },
     items: [{ desc: 'MS Rectangular Tube', size: '60x40x2.5 mm', grade: 'YST-210', reqQty: 12, planQty: 12 }],
     remarks: { special: '', customer: '', packing: 'Bundle of 30 pcs', handling: '' },
-    targetHours: 1.5, freight: 14000,
+    freight: 14000,
     gateIn: { time: iso(120), by: 'Suresh (Gate)' },
   }),
   // 3. 1st weight done, truck gone to loading yard.
@@ -321,9 +352,9 @@ const RAW_ADVICES = [
       invoiceNo: 'INV/26/0205', ewayBill: 'EWB7712884001', remark: '', time: iso(400), by: 'Vinod (Accounts)',
     },
   }),
-  // 6. Documents verified – gate pass still to be generated.
+  // 6. Documents verified (gate pass issued on verification) – waiting for security clearance.
   base({
-    id: 'a6', type: 'sales', no: 'SLS-0006', stage: 'DOC_OK', date: iso(780),
+    id: 'a6', type: 'sales', no: 'SLS-0006', stage: 'GATEPASS', date: iso(780),
     party: 'Balaji Infra Pvt Ltd', acName: 'Balaji Infra – Bilaspur', orderRef: 'SO/26/085', rate: 62000, reqQty: 11,
     billingInfo: { party: 'Balaji Infra Pvt Ltd', address: 'Link Road, Bilaspur, CG', gst: '22AAACB5678K1Z2', instr: '' },
     transport: { name: 'Singh Transport', vehicle: 'CG04 MM 3344', driver: 'Rajesh', mobile: '9876500077', from: 'Urla, Raipur', to: 'Bilaspur, CG' },
@@ -339,6 +370,7 @@ const RAW_ADVICES = [
       invoiceNo: 'INV/26/0198', ewayBill: 'EWB7712873002', remark: '', time: iso(600), by: 'Vinod (Accounts)',
     },
     docVerify: { remark: '', time: iso(560), by: 'Anil (Dispatch)' },
+    dispatch: { remark: '', time: iso(560), by: 'Anil (Dispatch)', gatePassNo: 'GP-2026-0013', biltyNo: 'LR-2026-0007' },
   }),
   // 7. Gate pass issued – waiting at main gate for security clearance.
   base({
@@ -413,7 +445,7 @@ const RAW_ADVICES = [
     transport: { name: 'Bharat Logistics', vehicle: 'CG13 RR 9090', driver: 'Mohan', mobile: '9876500044', from: 'Raigarh, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 25, planQty: 25 }],
     remarks: { special: '', customer: '', packing: '', handling: 'Unload with EOT crane' },
-    targetHours: 3, freight: 21000,
+    freight: 21000,
   }),
   // 2. Gate-In done with supplier's bilty recorded – waiting at weighbridge.
   base({
@@ -422,7 +454,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bhilai Transport Co.', vehicle: 'CG06 BB 3322', driver: 'Nandlal', mobile: '9876500111', from: 'Bhilai, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 20, planQty: 20 }],
-    targetHours: 3, freight: 15000,
+    freight: 15000,
     gateIn: { time: iso(170), by: 'Suresh (Gate)', biltyNo: 'BHS-55210', invoiceNo: 'BHS/INV/990', ewayBill: 'EWB8812011' },
   }),
   // 3. 1st weight (loaded) done – truck gone to unloading yard.
@@ -432,7 +464,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Shyam Carriers', vehicle: 'WB05 KK 1212', driver: 'Biswajit', mobile: '9876500133', from: 'Durgapur, WB', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 23, planQty: 23 }],
-    targetHours: 3, freight: 24000,
+    freight: 24000,
     gateIn: { time: iso(380), by: 'Suresh (Gate)', biltyNo: 'SSI-33109', invoiceNo: 'SSI/INV/112', ewayBill: 'EWB8812055' },
     tare: { weight: 37200, photo: '', remark: 'Loaded truck weighed first', method: 'manual', time: iso(370), by: 'Mahesh (Weighbridge)' },
   }),
@@ -443,7 +475,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bhilai Transport Co.', vehicle: 'CG06 BB 4433', driver: 'Ramesh', mobile: '9876500144', from: 'Bhilai, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 19, planQty: 19 }],
-    targetHours: 3, freight: 14500,
+    freight: 14500,
     gateIn: { time: iso(480), by: 'Suresh (Gate)', biltyNo: 'BHS-55233', invoiceNo: 'BHS/INV/1002', ewayBill: 'EWB8812066' },
     tare: { weight: 33800, photo: '', remark: '', method: 'manual', time: iso(470), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(460), end: iso(390), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -455,7 +487,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bharat Logistics', vehicle: 'CG13 RR 5522', driver: 'Dilip', mobile: '9876500155', from: 'Raigarh, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 24, planQty: 24 }],
-    targetHours: 3, freight: 20000,
+    freight: 20000,
     gateIn: { time: iso(630), by: 'Suresh (Gate)', biltyNo: 'JCL-77140', invoiceNo: 'JCL/INV/470', ewayBill: 'EWB8812077' },
     tare: { weight: 38500, photo: '', remark: '', method: 'manual', time: iso(620), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(610), end: iso(540), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -468,7 +500,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Shyam Carriers', vehicle: 'WB05 KK 2233', driver: 'Tapan', mobile: '9876500166', from: 'Durgapur, WB', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 21, planQty: 21 }],
-    targetHours: 3, freight: 22500,
+    freight: 22500,
     gateIn: { time: iso(780), by: 'Suresh (Gate)', biltyNo: 'SSI-33150', invoiceNo: 'SSI/INV/140', ewayBill: 'EWB8812088' },
     tare: { weight: 35300, photo: '', remark: '', method: 'manual', time: iso(770), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(760), end: iso(690), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -486,7 +518,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bhilai Transport Co.', vehicle: 'CG06 BB 6644', driver: 'Lalit', mobile: '9876500177', from: 'Bhilai, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 18, planQty: 18 }],
-    targetHours: 3, freight: 13500,
+    freight: 13500,
     gateIn: { time: iso(930), by: 'Suresh (Gate)', biltyNo: 'BHS-55280', invoiceNo: 'BHS/INV/1050', ewayBill: 'EWB8812099' },
     tare: { weight: 32500, photo: '', remark: '', method: 'manual', time: iso(920), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(910), end: iso(840), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -505,7 +537,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bharat Logistics', vehicle: 'CG13 RR 7733', driver: 'Ganesh', mobile: '9876500188', from: 'Raigarh, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 24, planQty: 24 }],
-    targetHours: 3, freight: 19500,
+    freight: 19500,
     gateIn: { time: iso(1080), by: 'Suresh (Gate)', biltyNo: 'JCL-77190', invoiceNo: 'JCL/INV/510', ewayBill: 'EWB8812110' },
     tare: { weight: 38900, photo: '', remark: '', method: 'manual', time: iso(1070), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1060), end: iso(990), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -525,7 +557,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Shyam Carriers', vehicle: 'WB05 KK 3344', driver: 'Subrata', mobile: '9876500199', from: 'Durgapur, WB', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 22, planQty: 22 }],
-    targetHours: 3, freight: 21500,
+    freight: 21500,
     gateIn: { time: iso(1230), by: 'Suresh (Gate)', biltyNo: 'SSI-33200', invoiceNo: 'SSI/INV/180', ewayBill: 'EWB8812121' },
     tare: { weight: 36800, photo: '', remark: '', method: 'manual', time: iso(1220), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1210), end: iso(1140), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -546,7 +578,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bharat Logistics', vehicle: 'CG13 RR 4411', driver: 'Suraj', mobile: '9876500122', from: 'Raigarh, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 22, planQty: 22 }],
-    targetHours: 3, freight: 18500,
+    freight: 18500,
     gateIn: { time: iso(1950), by: 'Suresh (Gate)', biltyNo: 'JCL-77102', invoiceNo: 'JCL/INV/450', ewayBill: 'EWB8811900' },
     tare: { weight: 36500, photo: '', remark: 'Loaded truck weighed first', method: 'manual', time: iso(1940), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1930), end: iso(1820), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -577,7 +609,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'Agarwal Pipe House', address: 'GE Road, Rajnandgaon, CG', gst: '22AAAPH9900Q1Z8', instr: '' },
     transport: { name: 'Raipur Carriers', vehicle: 'CG07 XY 3131', driver: 'Yogesh', mobile: '9876500222', from: 'Urla, Raipur', to: 'Rajnandgaon, CG' },
     items: [{ desc: 'MS Round Tube', size: '40 NB', grade: 'YST-240', reqQty: 13, planQty: 13 }],
-    targetHours: 2, freight: 10000,
+    freight: 10000,
     gateIn: { time: iso(140), by: 'Suresh (Gate)' },
   }),
   base({
@@ -715,7 +747,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Shyam Carriers', vehicle: 'WB05 KK 4455', driver: 'Partha', mobile: '9876500311', from: 'Durgapur, WB', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 20, planQty: 20 }],
-    targetHours: 3, freightTerms: 'for', freight: 0, // FOR – supplier delivers to the plant, freight paid by the supplier
+    freightTerms: 'for', freight: 0, // FOR – supplier delivers to the plant, freight paid by the supplier
   }),
   base({
     id: 'p12', type: 'purchase', no: 'PUR-0012', stage: 'GATED_IN', date: iso(220),
@@ -723,7 +755,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bharat Logistics', vehicle: 'CG13 RR 5566', driver: 'Jitendra', mobile: '9876500322', from: 'Raigarh, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 23, planQty: 23 }],
-    targetHours: 3, freight: 19000,
+    freight: 19000,
     gateIn: { time: iso(190), by: 'Suresh (Gate)', biltyNo: 'JCL-77215', invoiceNo: 'JCL/INV/530', ewayBill: 'EWB8812140' },
   }),
   base({
@@ -732,7 +764,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bhilai Transport Co.', vehicle: 'CG06 BB 6677', driver: 'Ranjit', mobile: '9876500333', from: 'Bhilai, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 18, planQty: 18 }],
-    targetHours: 3, freight: 13500,
+    freight: 13500,
     gateIn: { time: iso(400), by: 'Suresh (Gate)', biltyNo: 'BHS-55310', invoiceNo: 'BHS/INV/1110', ewayBill: 'EWB8812150' },
     tare: { weight: 32400, photo: '', remark: '', method: 'manual', time: iso(390), by: 'Mahesh (Weighbridge)' },
   }),
@@ -742,7 +774,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Shyam Carriers', vehicle: 'WB05 KK 7788', driver: 'Ananda', mobile: '9876500344', from: 'Durgapur, WB', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 21, planQty: 21 }],
-    targetHours: 3, freight: 22000,
+    freight: 22000,
     gateIn: { time: iso(500), by: 'Suresh (Gate)', biltyNo: 'SSI-33260', invoiceNo: 'SSI/INV/160', ewayBill: 'EWB8812160' },
     tare: { weight: 35600, photo: '', remark: '', method: 'manual', time: iso(490), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(480), end: iso(410), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -753,7 +785,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bhilai Transport Co.', vehicle: 'CG06 BB 8899', driver: 'Mahendra', mobile: '9876500355', from: 'Bhilai, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 19, planQty: 19 }],
-    targetHours: 3, freight: 14800,
+    freight: 14800,
     gateIn: { time: iso(660), by: 'Suresh (Gate)', biltyNo: 'BHS-55345', invoiceNo: 'BHS/INV/1150', ewayBill: 'EWB8812170' },
     tare: { weight: 33900, photo: '', remark: '', method: 'manual', time: iso(650), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(640), end: iso(570), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -765,7 +797,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bharat Logistics', vehicle: 'CG13 RR 9988', driver: 'Harish', mobile: '9876500366', from: 'Raigarh, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 24, planQty: 24 }],
-    targetHours: 3, freight: 20000,
+    freight: 20000,
     gateIn: { time: iso(810), by: 'Suresh (Gate)', biltyNo: 'JCL-77260', invoiceNo: 'JCL/INV/560', ewayBill: 'EWB8812180' },
     tare: { weight: 39000, photo: '', remark: '', method: 'manual', time: iso(800), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(790), end: iso(720), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -782,7 +814,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Shyam Carriers', vehicle: 'WB05 KK 1010', driver: 'Soumen', mobile: '9876500377', from: 'Durgapur, WB', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 20, planQty: 20 }],
-    targetHours: 3, freight: 21000,
+    freight: 21000,
     gateIn: { time: iso(960), by: 'Suresh (Gate)', biltyNo: 'SSI-33300', invoiceNo: 'SSI/INV/200', ewayBill: 'EWB8812190' },
     tare: { weight: 34700, photo: '', remark: '', method: 'manual', time: iso(950), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(940), end: iso(870), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -800,7 +832,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bhilai Transport Co.', vehicle: 'CG06 BB 2121', driver: 'Kailash', mobile: '9876500388', from: 'Bhilai, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 17, planQty: 17 }],
-    targetHours: 3, freight: 12800,
+    freight: 12800,
     gateIn: { time: iso(1110), by: 'Suresh (Gate)', biltyNo: 'BHS-55390', invoiceNo: 'BHS/INV/1200', ewayBill: 'EWB8812200' },
     tare: { weight: 31800, photo: '', remark: '', method: 'manual', time: iso(1100), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1090), end: iso(1020), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -819,7 +851,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bharat Logistics', vehicle: 'CG13 RR 3232', driver: 'Umesh', mobile: '9876500399', from: 'Raigarh, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 23, planQty: 23 }],
-    targetHours: 3, freight: 19500,
+    freight: 19500,
     gateIn: { time: iso(1260), by: 'Suresh (Gate)', biltyNo: 'JCL-77310', invoiceNo: 'JCL/INV/610', ewayBill: 'EWB8812210' },
     tare: { weight: 37900, photo: '', remark: '', method: 'manual', time: iso(1250), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(1240), end: iso(1170), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -839,7 +871,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Shyam Carriers', vehicle: 'WB05 KK 4343', driver: 'Gautam', mobile: '9876500400', from: 'Durgapur, WB', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 20, planQty: 20 }],
-    targetHours: 3, freight: 18000,
+    freight: 18000,
     gateIn: { time: iso(2050), by: 'Suresh (Gate)', biltyNo: 'SSI-33400', invoiceNo: 'SSI/INV/260', ewayBill: 'EWB8812220' },
     tare: { weight: 34500, photo: '', remark: '', method: 'manual', time: iso(2040), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(2030), end: iso(1960), delayMin: 0, delayReason: '', by: 'Dinesh (Loading)' },
@@ -862,7 +894,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'Gupta Steel Agency', address: 'Main Road, Jagdalpur, CG', gst: '22AAGSA6677P1Z3', instr: '' },
     transport: { name: 'Jagdalpur Carriers', vehicle: 'CG17 JJ 4141', driver: 'Ramesh', mobile: '9876500411', from: 'Urla, Raipur', to: 'Jagdalpur, CG' },
     items: [{ desc: 'MS Square Tube', size: '25x25x2.0 mm', grade: 'YST-210', reqQty: 8, planQty: 8 }],
-    targetHours: 2, freight: 11500,
+    freight: 11500,
     gateIn: { time: iso(310), by: 'Suresh (Gate)' },
     tare: { weight: 13900, photo: '', remark: '', method: 'manual', time: iso(300), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(190), by: 'Dinesh (Loading)' }, // running 3+ hrs vs 2 hr target → delay reason will be asked
@@ -873,7 +905,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'Agarwal Pipe House', address: 'GE Road, Rajnandgaon, CG', gst: '22AAAPH9900Q1Z8', instr: '' },
     transport: { name: 'Raipur Carriers', vehicle: 'CG07 XY 5151', driver: 'Mohan', mobile: '9876500422', from: 'Urla, Raipur', to: 'Rajnandgaon, CG' },
     items: [{ desc: 'MS Round Tube', size: '40 NB', grade: 'YST-240', reqQty: 9, planQty: 9 }],
-    targetHours: 2, freight: 9500,
+    freight: 9500,
     gateIn: { time: iso(100), by: 'Suresh (Gate)' },
     tare: { weight: 13850, photo: '', remark: '', method: 'manual', time: iso(90), by: 'Mahesh (Weighbridge)' },
   }),
@@ -883,7 +915,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bharat Logistics', vehicle: 'CG13 RR 6161', driver: 'Prem', mobile: '9876500433', from: 'Raigarh, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 22, planQty: 22 }],
-    targetHours: 3, freight: 19000,
+    freight: 19000,
     gateIn: { time: iso(130), by: 'Suresh (Gate)', biltyNo: 'JCL-77330', invoiceNo: 'JCL/INV/640', ewayBill: 'EWB8812230' },
     tare: { weight: 36900, photo: '', remark: '', method: 'manual', time: iso(120), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(60), by: 'Dinesh (Loading)' }, // 1 hr into a 3 hr unloading – on time
@@ -894,7 +926,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Bhilai Transport Co.', vehicle: 'CG06 BB 7171', driver: 'Sunil', mobile: '9876500444', from: 'Bhilai, CG', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '3.0 mm x 1250 mm', grade: 'IS 10748', reqQty: 19, planQty: 19 }],
-    targetHours: 3, freight: 14000,
+    freight: 14000,
     gateIn: { time: iso(340), by: 'Suresh (Gate)', biltyNo: 'BHS-55420', invoiceNo: 'BHS/INV/1240', ewayBill: 'EWB8812240' },
     tare: { weight: 33500, photo: '', remark: '', method: 'manual', time: iso(330), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(250), by: 'Dinesh (Loading)' }, // 4+ hrs vs 3 hr target → delay reason will be asked
@@ -905,7 +937,7 @@ const RAW_ADVICES = [
     billingInfo: { party: 'M/s Pawan Putra Tubes', address: 'Urla Guma Road, Borjhara, Raipur', gst: '22AAKFP1234Q1ZX', instr: '' },
     transport: { name: 'Shyam Carriers', vehicle: 'WB05 KK 8181', driver: 'Dipankar', mobile: '9876500455', from: 'Durgapur, WB', to: 'Urla, Raipur' },
     items: [{ desc: 'HR Coil', size: '2.5 mm x 1250 mm', grade: 'IS 10748', reqQty: 22, planQty: 22 }],
-    targetHours: 3, freight: 23000,
+    freight: 23000,
     gateIn: { time: iso(880), by: 'Suresh (Gate)', biltyNo: 'SSI-33450', invoiceNo: 'SSI/INV/300', ewayBill: 'EWB8812250' },
     tare: { weight: 36200, photo: '', remark: '', method: 'manual', time: iso(870), by: 'Mahesh (Weighbridge)' },
     loading: { start: iso(860), end: iso(640), delayMin: 40, delayReason: 'Crane breakdown, stopped for 40 minutes', by: 'Dinesh (Loading)' },
@@ -916,7 +948,7 @@ const RAW_ADVICES = [
 
 export const SEED_ADVICES = RAW_ADVICES.map(normalizeAdvice);
 // Bump whenever the demo trucks change, so browsers pick up the new set automatically.
-export const SEED_VERSION = 6;
+export const SEED_VERSION = 8;
 
 // ═══ Sales Orders & Purchase Indents (one list, `type` = subsystem) ═══
 // Sales Order status: 'pending' (Order Approval) | 'approved' | 'rejected'. Older orders with no status count as approved.
@@ -998,3 +1030,169 @@ export const SEED_ORDERS = [
     status: 'pending',
   },
 ];
+
+// ═══ Sales & Purchase masters (Master → Products, Vendors, Payment Terms, UOM) ═══
+// Fields follow the Botivate Master System documentation (Products, UOM, Vendors, Payment Terms).
+
+// ── UOM: Name, abbreviation, description ──
+export const blankUom = () => ({ name: '', abbr: '', description: '' });
+export const SEED_UOMS = [
+  { id: 'u-mt', name: 'Metric Ton', abbr: 'MT', description: 'Steel tubes, coils – 1000 kg' },
+  { id: 'u-kg', name: 'Kilogram', abbr: 'Kg', description: '' },
+  { id: 'u-nos', name: 'Numbers', abbr: 'Nos', description: 'Pieces' },
+  { id: 'u-bdl', name: 'Bundle', abbr: 'Bundle', description: 'Bundle of tubes' },
+  { id: 'u-coil', name: 'Coil', abbr: 'Coil', description: '' },
+  { id: 'u-mtr', name: 'Meter', abbr: 'Mtr', description: '' },
+];
+
+// ── Parties (doc "Vendors"): Name, Address, Mobile (10 digits), Contact Name, GST (15), PAN (10), email, state, TDS, contact persons ──
+// Only two types: 'Sales' = our customers, 'Purchase' = our suppliers.
+export const VENDOR_TYPES = ['Sales', 'Purchase'];
+export const PARTY_LABEL = { Sales: 'Customer', Purchase: 'Supplier' };
+export const blankVendor = (type = 'Purchase') => ({
+  type, name: '', address: '', mobile: '', contactName: '', gst: '', pan: '', email: '', state: '', tds: 'No', contacts: [],
+});
+export const SEED_VENDORS = [
+  { ...blankVendor(), id: 'v1', type: 'Purchase', name: 'Jindal Steel Traders', address: 'Siltara Industrial Area, Raipur', mobile: '9827000101', contactName: 'R. K. Jain', gst: '22AABCJ1234K1Z5', pan: 'AABCJ1234K', email: 'sales@jindaltraders.in', state: 'Chhattisgarh' },
+  { ...blankVendor(), id: 'v2', type: 'Purchase', name: 'Godawari Ispat Ltd', address: 'Urla Industrial Area, Raipur', mobile: '9827000202', contactName: 'Sunil Agrawal', gst: '22AACCG5678L1Z3', pan: 'AACCG5678L', email: 'dispatch@godawari.in', state: 'Chhattisgarh' },
+  { ...blankVendor(), id: 'v3', type: 'Purchase', name: 'Raipur Packaging Co', address: 'Bhanpuri, Raipur', mobile: '9827000303', contactName: 'Manoj Sahu', gst: '22AAFFR9012M1Z1', pan: 'AAFFR9012M', email: '', state: 'Chhattisgarh' },
+  // Customers (Sales) – the parties on the demo sales orders / advices.
+  { ...blankVendor('Sales'), id: 'c1', name: 'Shree Steel Traders', address: 'Transport Nagar, Nagpur, MH', gst: '27ABCDE1234F1Z5', pan: 'ABCDE1234F', state: 'Maharashtra' },
+  { ...blankVendor('Sales'), id: 'c2', name: 'Balaji Infra Pvt Ltd', address: 'Link Road, Bilaspur, CG', gst: '22AAACB5678K1Z2', pan: 'AAACB5678K', state: 'Chhattisgarh' },
+  { ...blankVendor('Sales'), id: 'c3', name: 'Om Hardware', address: 'Station Road, Durg, CG', gst: '22AAHFO9988M1Z9', pan: 'AAHFO9988M', state: 'Chhattisgarh' },
+  { ...blankVendor('Sales'), id: 'c4', name: 'Krishna Steel Corp', address: 'Steel Market, Bhilai, CG', gst: '22AAFCK4455L1Z7', pan: 'AAFCK4455L', state: 'Chhattisgarh' },
+];
+// Doc rules: Mobile 10 digits, GST 15 chars, PAN 10 chars, valid email.
+export const vendorErrors = (v) => {
+  const e = {};
+  if (!v.name.trim()) e.name = 'Name is required';
+  if (v.mobile && !/^\d{10}$/.test(v.mobile)) e.mobile = 'Mobile must be 10 digits';
+  if (v.gst && v.gst.trim().length !== 15) e.gst = 'GST must be 15 characters';
+  if (v.pan && v.pan.trim().length !== 10) e.pan = 'PAN must be 10 characters';
+  if (v.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email)) e.email = 'Enter a valid email';
+  return e;
+};
+
+// ── Payment Terms: Value (text) – add and delete only, no edit ──
+export const SEED_PAYMENT_TERMS = [
+  { id: 'pt1', value: 'Advance' },
+  { id: 'pt2', value: '15 days credit' },
+  { id: 'pt3', value: '30 days credit' },
+  { id: 'pt4', value: '45 days credit' },
+  { id: 'pt5', value: 'Against delivery' },
+];
+
+// ── Product group heads (the "group head" a product belongs to) ──
+export const SEED_GROUP_HEADS = [
+  { id: 'gh1', name: 'MS Tubes' },
+  { id: 'gh2', name: 'HR Coil' },
+  { id: 'gh3', name: 'Packing Material' },
+];
+
+// ── Products: Name (2–100), SKU (auto when blank, e.g. RM-0001), unit, price, item/service, item type,
+//    group head, opening qty, reorder levels (MOQ, safety stock, max level), vendors ──
+// Kept beside the doc fields: size + grade (an advice line is matched to a product by name + size + grade),
+// use (Sales product or Purchase product – set by the Master page it is created on), HSN, GST %, store location, active.
+// Field keys: code = SKU, uom = unit, rate = price, kind = item/service, category = item type,
+// openingStock = opening qty, minStock = safety stock, maxStock = max level.
+export const ITEM_USE = { sales: 'Sales', purchase: 'Purchase' };
+// Item type → SKU prefix used when the SKU is left blank.
+export const ITEM_TYPES = { 'Finished Goods': 'FG', 'Raw Material': 'RM', 'Consumable / Packing': 'CN', Spares: 'SP', Scrap: 'SC', Other: 'OT' };
+export const ITEM_CATEGORIES = Object.keys(ITEM_TYPES);
+export const blankItem = () => ({
+  name: '', code: '', uom: 'MT', rate: '', kind: 'item', category: 'Finished Goods', groupHead: '',
+  openingStock: '', moq: '', minStock: '', maxStock: '', vendorIds: [],
+  size: '', grade: '', use: 'sales', hsn: '', gstPct: 18, location: '', active: true,
+});
+/** Next free SKU for an item type: highest PREFIX-NNNN in use + 1 (e.g. RM-0001). */
+export const nextSku = (items, category) => {
+  const p = (ITEM_TYPES[category] || 'OT') + '-';
+  const max = items.reduce((m, x) => (x.code?.startsWith(p) && /^\d+$/.test(x.code.slice(p.length)) ? Math.max(m, Number(x.code.slice(p.length))) : m), 0);
+  return p + String(max + 1).padStart(4, '0');
+};
+export const itemErrors = (f, items, id) => {
+  const e = {};
+  const name = String(f.name || '').trim();
+  if (name.length < 2 || name.length > 100) e.name = 'Name must be 2–100 characters';
+  const code = String(f.code || '').trim().toLowerCase();
+  if (code && items.some((x) => x.id !== id && String(x.code).toLowerCase() === code)) e.code = 'This SKU is already used';
+  if (!f.uom) e.uom = 'Unit is required';
+  if (Number(f.maxStock) && Number(f.minStock) > Number(f.maxStock)) e.maxStock = 'Max level must be more than safety stock';
+  return e;
+};
+
+const it = (id, over) => ({ ...blankItem(), id, ...over });
+export const SEED_ITEMS = [
+  it('i1', { code: 'FG-0001', name: 'MS Square Tube', size: '40x40x2.0 mm', grade: 'YST-210', groupHead: 'gh1', hsn: '7306', rate: 61500, openingStock: 90, minStock: 20, maxStock: 120, location: 'FG Yard A' }),
+  it('i2', { code: 'FG-0002', name: 'MS Square Tube', size: '25x25x2.0 mm', grade: 'YST-210', groupHead: 'gh1', hsn: '7306', rate: 61000, openingStock: 50, minStock: 15, maxStock: 80, location: 'FG Yard A' }),
+  it('i3', { code: 'FG-0003', name: 'MS Rectangular Tube', size: '60x40x2.5 mm', grade: 'YST-210', groupHead: 'gh1', hsn: '7306', rate: 62000, openingStock: 75, minStock: 20, maxStock: 100, location: 'FG Yard B' }),
+  it('i4', { code: 'FG-0004', name: 'MS Rectangular Tube', size: '50x50x2.5 mm', grade: 'YST-210', groupHead: 'gh1', hsn: '7306', rate: 62000, openingStock: 12, minStock: 15, maxStock: 60, location: 'FG Yard B' }),
+  it('i5', { code: 'FG-0005', name: 'MS Round Tube', size: '25 NB', grade: 'YST-240', groupHead: 'gh1', hsn: '7306', rate: 60800, openingStock: 65, minStock: 15, maxStock: 90, location: 'FG Yard C' }),
+  it('i6', { code: 'FG-0006', name: 'MS Round Tube', size: '32 NB', grade: 'YST-240', groupHead: 'gh1', hsn: '7306', rate: 59500, openingStock: 75, minStock: 15, maxStock: 90, location: 'FG Yard C' }),
+  it('i7', { code: 'FG-0007', name: 'MS Round Tube', size: '40 NB', grade: 'YST-240', groupHead: 'gh1', hsn: '7306', rate: 60500, openingStock: 30, minStock: 15, maxStock: 80, location: 'FG Yard C' }),
+  it('i8', { code: 'FG-0008', name: 'MS Round Tube', size: '50 NB', grade: 'YST-240', groupHead: 'gh1', hsn: '7306', rate: 61500, openingStock: 20, minStock: 10, maxStock: 60, location: 'FG Yard C' }),
+  it('i9', { code: 'RM-0001', name: 'HR Coil', category: 'Raw Material', use: 'purchase', size: '2.5 mm x 1250 mm', grade: 'IS 10748', groupHead: 'gh2', hsn: '7208', rate: 52000, openingStock: 150, moq: 25, minStock: 300, maxStock: 600, vendorIds: ['v1', 'v2'], location: 'RM Bay 1' }),
+  it('i10', { code: 'RM-0002', name: 'HR Coil', category: 'Raw Material', use: 'purchase', size: '3.0 mm x 1250 mm', grade: 'IS 10748', groupHead: 'gh2', hsn: '7208', rate: 51500, openingStock: 120, moq: 25, minStock: 300, maxStock: 500, vendorIds: ['v2'], location: 'RM Bay 1' }),
+  it('i11', { code: 'CN-0001', name: 'MS Packing Strap', category: 'Consumable / Packing', use: 'purchase', size: '32 mm', groupHead: 'gh3', hsn: '7326', rate: 68000, openingStock: 1.5, moq: 1, minStock: 2, maxStock: 6, vendorIds: ['v3'], location: 'Store' }),
+];
+
+// ═══ Stock (Inventory page) ═══
+const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+/** Does an advice / order line belong to this product? (same name + size; grade too when the product has one) */
+export const lineIsItem = (line, item) =>
+  norm(line.desc) === norm(item.name) && norm(line.size) === norm(item.size) && (!item.grade || !line.grade || norm(line.grade) === norm(item.grade));
+const lineQty = (l) => Number(l.loadQty ?? l.planQty) || 0;
+const qtyOf = (advices, item) => advices.reduce((s, a) => s + a.items.filter((l) => lineIsItem(l, item)).reduce((x, l) => x + lineQty(l), 0), 0);
+const r3 = (n) => Math.round(n * 1000) / 1000;
+
+/**
+ * Stock of one product from the truck movements:
+ *  received   = purchase trucks whose GRN is done (material is in our store)
+ *  dispatched = sales trucks that have gone out (Gate-Out done)
+ *  inStock    = opening qty + received − dispatched
+ *  reserved   = sales trucks in process (advice made, not yet out) – already promised
+ *  incoming   = purchase trucks on the way / inside, GRN not yet done
+ *  available  = inStock − reserved
+ * Reorder: when available + incoming falls to the Safety Stock, order up to the Max Level –
+ * never less than the MOQ.
+ */
+export function stockOf(item, advices) {
+  const sales = advices.filter((a) => a.type === 'sales');
+  const purchase = advices.filter((a) => a.type === 'purchase');
+  const received = qtyOf(purchase.filter((a) => a.grn), item);
+  const incoming = qtyOf(purchase.filter((a) => !a.grn), item);
+  const dispatched = qtyOf(sales.filter((a) => a.stage === 'OUT'), item);
+  const reserved = qtyOf(sales.filter((a) => a.stage !== 'OUT'), item);
+  const inStock = (Number(item.openingStock) || 0) + received - dispatched;
+  const available = inStock - reserved;
+  const safety = Number(item.minStock) || 0;
+  const max = Number(item.maxStock) || 0;
+  const net = available + incoming; // what we will have once the purchase trucks on the way are received
+  const low = safety > 0 ? net <= safety : net < 0;
+  const buys = item.use !== 'sales';
+  const need = Math.max(0, (max || safety) - net);
+  const toBuy = buys && low ? r3(Math.max(need, Number(item.moq) || 0)) : 0;
+  const status = available <= 0 ? (buys ? 'Purchase needed' : 'Out of stock') : low ? (buys ? 'Purchase needed' : 'Low stock') : 'OK';
+  return {
+    received: r3(received), incoming: r3(incoming), dispatched: r3(dispatched), reserved: r3(reserved),
+    inStock: r3(inStock), available: r3(available), low, toBuy, status,
+  };
+}
+
+/** Where a master row is still used – checked before delete ("impact check" in the doc). Returns the reasons. */
+export function impactOf(kind, row, state) {
+  const out = [];
+  const add = (list, label) => list.length && out.push(`${list.length} ${label}`);
+  if (kind === 'items') {
+    add(state.advices.filter((a) => a.items.some((l) => lineIsItem(l, row))), 'advice(s)');
+    add((state.orders || []).filter((o) => o.items.some((l) => lineIsItem(l, row))), 'order / indent(s)');
+  }
+  if (kind === 'vendors') {
+    add((state.items || []).filter((x) => x.vendorIds?.includes(row.id)), 'product(s)');
+    add((state.orders || []).filter((o) => norm(o.po?.supplier) === norm(row.name) || norm(o.party) === norm(row.name)), 'order / PO(s)');
+    add(state.advices.filter((a) => norm(a.party) === norm(row.name)), 'advice(s)');
+  }
+  if (kind === 'uoms') add((state.items || []).filter((x) => x.uom === row.abbr), 'product(s)');
+  if (kind === 'groupHeads') add((state.items || []).filter((x) => x.groupHead === row.id), 'product(s)');
+  return out;
+}

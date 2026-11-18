@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import Ico from '../components/Icon.jsx';
 import { useStore } from '../store.jsx';
 import { labelsFor, termsOf, termsText, weBearFreight } from '../data.js';
 import { Empty, Modal, PageHead, biltyOf, biltyPending, fmtDT, netText, materialText, plannedTotal } from '../components/ui.jsx';
+import { ExportButtons } from '../components/DataIO.jsx';
 
 // Bilty freight cell: amount when the cost is on our side, otherwise just the terms.
 const freightText = (a) =>
@@ -16,7 +18,7 @@ const Sheet = ({ title, children }) => (
       <h2>{title}</h2>
     </div>
     {children}
-    <button className="btn primary no-print" onClick={() => window.print()}>🖨 Print</button>
+    <button className="btn primary no-print" onClick={() => window.print()}><Ico name="print" />Print</button>
   </div>
 );
 const KV = ({ k, v }) => <tr><th>{k}</th><td>{v || '—'}</td></tr>;
@@ -30,7 +32,18 @@ export function BiltyPage({ sub }) {
   const lr = (x) => biltyOf(x) || 'Pending';
   return (
     <>
-      <PageHead title="Sales · Bilty / LR" sub="The Bilty number is generated with the Gate Pass and matched at Security Clearance." />
+      <PageHead
+        title="Sales · Bilty / LR" sub="The Bilty number is generated with the Gate Pass and matched at Security Clearance."
+        right={
+          <ExportButtons
+            title="Bilty / LR" filename="bilty-lr" rows={rows}
+            columns={[
+              ['LR No.', (x) => biltyOf(x) || biltyPending(x)], ['Date', (x) => fmtDT(x.dispatch?.time) || fmtDT(x.date)], ['Advice', (x) => x.no], ['Party', (x) => x.party],
+              ['Transporter', (x) => x.transport.name], ['Truck', (x) => x.transport.vehicle], ['Route', (x) => `${x.transport.from} -> ${x.transport.to}`], ['Freight', freightText],
+            ]}
+          />
+        }
+      />
       <div className="card">
         {rows.length === 0 ? <Empty text="No bilty records." /> : (
           <table className="tbl">
@@ -41,7 +54,7 @@ export function BiltyPage({ sub }) {
                   <td>{biltyOf(x) ? <b>{lr(x)}</b> : <span className="badge gray">{biltyPending(x)}</span>}</td><td>{fmtDT(x.dispatch?.time) || fmtDT(x.date)}</td><td>{x.transport.name}</td>
                   <td><span className="truck sm">{x.transport.vehicle}</span></td>
                   <td>{x.transport.from} ➜ {x.transport.to}</td><td>{freightText(x)}</td>
-                  <td><button className="btn sm" onClick={() => setSel(x.id)}>View</button></td>
+                  <td className="acts"><button className="btn sm" onClick={() => setSel(x.id)}><Ico name="view" />View</button></td>
                 </tr>
               ))}
             </tbody>

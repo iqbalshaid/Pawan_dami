@@ -1,25 +1,31 @@
 import React, { useState } from 'react';
+import Ico from '../components/Icon.jsx';
 import { useStore } from '../store.jsx';
-import { actOf, labelsFor, soApproved, termsText } from '../data.js';
-import { AdviceSummary, Badge, Empty, Field, Modal, PageHead, Timeline, biltyOf, biltyPending, fmtDT, materialText, plannedTotal } from '../components/ui.jsx';
+import { actOf, labelsFor, lineIsItem, soApproved, termsText } from '../data.js';
+import { AdviceSummary, Badge, Empty, Field, Modal, PageHead, Timeline, biltyOf, biltyPending, fmtDT, materialText, plannedTotal, statusText } from '../components/ui.jsx';
+import { ExportButtons } from '../components/DataIO.jsx';
 
 const emptyItem = { desc: '', size: '', grade: '', reqQty: '', planQty: '' };
+// Purpose is fixed by the subsystem: a Sales truck only comes for Loading, a Purchase truck only for Unloading.
+const purposeOf = (sub) => (sub === 'purchase' ? 'unloading' : 'loading');
+// Sales advices are Ex-Works only; Purchase can be EX or FOR (default FOR – supplier delivers).
+const TERMS = { sales: ['ex'], purchase: ['ex', 'for'] };
 const blank = (sub) => ({
-  purpose: sub === 'purchase' ? 'unloading' : 'loading',
+  purpose: purposeOf(sub),
   party: '', acName: '', orderRef: '', rate: '', reqQty: '',
   billingInfo: { party: '', address: '', gst: '', instr: '' },
   transport: { name: '', vehicle: '', driver: '', mobile: '', from: sub === 'sales' ? 'Urla, Raipur' : '', to: sub === 'sales' ? '' : 'Urla, Raipur' },
   items: [{ ...emptyItem }],
   remarks: { special: '', customer: '', packing: '', handling: '' },
-  targetHours: 2, freight: '',
-  // Sales defaults to FOR (we deliver); Purchase defaults to FOR (supplier delivers)
-  freightTerms: 'for',
+  freight: '',
+  freightTerms: sub === 'purchase' ? 'for' : 'ex',
 });
 
 export function InventoryPage({ sub }) {
   const { state, can } = useStore();
   const L = labelsFor(sub);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [view, setView] = useState(null);
   const [q, setQ] = useState('');
   const rows = state.advices.filter((a) => a.type === sub).filter((a) =>
@@ -32,7 +38,19 @@ export function InventoryPage({ sub }) {
       <PageHead
         title={`${sub === 'sales' ? 'Sales' : 'Purchase'} · ${L.advice}`}
         sub={sub === 'purchase' ? `Create a ${L.advice}. The supplier's Bilty (LR) is recorded at Gate-In.` : `Create a ${L.advice}. The Bilty (LR) number is generated at Dispatch OK.`}
-        right={can(sub, 'inventory', 'create') && <button className="btn primary" onClick={() => setCreating(true)}>+ Create {L.advice}</button>}
+        right={
+          <>
+            <ExportButtons
+              title={`${sub === 'sales' ? 'Sales' : 'Purchase'} ${L.advice}`} filename={`${sub}-advices`} rows={rows}
+              columns={[
+                ['Advice', (a) => a.no], ['Date', (a) => fmtDT(a.date)], [L.party, (a) => a.party], ['Order Ref', (a) => a.orderRef], ['Material', materialText],
+                ['Plan Qty (MT)', plannedTotal], ['Truck', (a) => a.transport.vehicle], ['Transporter', (a) => a.transport.name], ['Driver', (a) => a.transport.driver],
+                ['Route', (a) => `${a.transport.from} -> ${a.transport.to}`], ['Bilty', (a) => biltyOf(a) || biltyPending(a)], ['Status', statusText],
+              ]}
+            />
+            {can(sub, 'inventory', 'create') && <button className="btn primary" onClick={() => setCreating(true)}><Ico name="add" />Create {L.advice}</button>}
+          </>
+        }
       />
       <div className="card">
         <div className="toolbar"><input placeholder="Search advice / party / truck / transporter…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
@@ -50,7 +68,10 @@ export function InventoryPage({ sub }) {
                   <td>{a.transport.name}</td>
                   <td>{biltyOf(a) || <span className="muted">{biltyPending(a)}</span>}</td>
                   <td><Badge a={a} /></td>
-                  <td><button className="btn sm" onClick={() => setView(a.id)}>View</button></td>
+                  <td className="acts">
+                    <button className="btn sm" onClick={() => setView(a.id)}><Ico name="view" />View</button>
+                    {canEditAdvice(a) && can(sub, 'inventory', 'create') && <button className="btn sm" onClick={() => setEditing(a.id)}><Ico name="edit" />Edit</button>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -66,6 +87,9 @@ export function InventoryPage({ sub }) {
         </Modal>
       )}
       {creating && <CreateModal sub={sub} onClose={() => setCreating(false)} />}
+      {editing && state.advices.find((a) => a.id === editing && canEditAdvice(a)) && (
+        <CreateModal sub={sub} advice={state.advices.find((a) => a.id === editing)} onClose={() => setEditing(null)} />
+      )}
     </>
   );
 }
@@ -85,39 +109,63 @@ const fromOrder = (sub, o, f) => {
   }
   return {
     ...f, orderRef: o.no, party: o.party, acName: o.acName || '', rate: o.items[0]?.rate || '', reqQty, items,
-    freightTerms: o.freightTerms || f.freightTerms,
+    freightTerms: 'ex', // Sales advice is always Ex-Works, whatever the Sales Order says
     billingInfo: { ...f.billingInfo, party: o.billingInfo?.party || o.party, address: o.billingInfo?.address || '', gst: o.billingInfo?.gst || '' },
     transport: { ...f.transport, to: o.shipTo || f.transport.to },
     remarks: { ...f.remarks, customer: o.remarks || f.remarks.customer },
   };
 };
 
-function CreateModal({ sub, onClose }) {
-  const { createAdvice, state } = useStore();
+// Advice can be corrected until Loading / Unloading is recorded – after that the actual items are fixed.
+export const canEditAdvice = (a) => ['CREATED', 'GATED_IN', 'TARE_DONE'].includes(a.stage) && !a.loading?.end;
+const str = (v) => (v == null ? '' : String(v));
+const fromAdvice = (sub, a) => {
+  const b = blank(sub);
+  return {
+    ...b, purpose: a.purpose || b.purpose, party: str(a.party), acName: str(a.acName), orderRef: str(a.orderRef), rate: str(a.rate), reqQty: str(a.reqQty),
+    billingInfo: { ...b.billingInfo, ...a.billingInfo }, transport: { ...b.transport, ...a.transport },
+    items: a.items.map((i) => ({ ...i, reqQty: str(i.reqQty), planQty: str(i.planQty) })),
+    remarks: { ...b.remarks, ...a.remarks }, freight: str(a.freight), freightTerms: a.freightTerms || b.freightTerms,
+  };
+};
+
+/** `advice` given = edit that advice (number, stage and history stay as they are). */
+function CreateModal({ sub, onClose, advice }) {
+  const { createAdvice, updateAdvice, state, user } = useStore();
   const L = labelsFor(sub);
-  const [f, setF] = useState(blank(sub));
+  const [f, setF] = useState(() => (advice ? fromAdvice(sub, advice) : blank(sub)));
   const sources = sourcesFor(sub, state.orders || []);
   const pickOrder = (ref) => {
     const src = sources.find((x) => x.ref === ref);
     if (src) setF((s) => fromOrder(sub, src.o, s));
   };
-  const act = f.purpose === 'unloading' ? 'Unloading' : 'Loading'; // what this truck is actually here for
+  const act = L.act; // Sales = Loading, Purchase = Unloading
   // does the freight cost sit with us? (Sales FOR / Purchase EX)
   const weBear = sub === 'purchase' ? f.freightTerms === 'ex' : f.freightTerms === 'for';
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const nest = (g, k, v) => setF((s) => ({ ...s, [g]: { ...s[g], [k]: v } }));
+  // Item Master items this subsystem deals in – picking one fills name / size / grade exactly, so stock adds up.
+  const master = (state.items || []).filter((x) => x.active && x.use === sub);
+  const pickItem = (i, id) => {
+    const m = master.find((x) => x.id === id);
+    if (m) setF((s) => ({ ...s, items: s.items.map((it, x) => (x === i ? { ...it, desc: m.name, size: m.size, grade: m.grade } : it)) }));
+  };
   const setItem = (i, k, v) => setF((s) => ({ ...s, items: s.items.map((it, x) => (x === i ? { ...it, [k]: v } : it)) }));
   const valid = f.party && f.orderRef && f.transport.vehicle && f.transport.name && f.items.every((i) => i.desc && i.planQty);
 
   const save = () => {
-    const advice = createAdvice(sub, {
+    const data = {
       ...f, rate: Number(f.rate) || 0, reqQty: Number(f.reqQty) || 0,
       // freight amount applies only when the freight cost is on our side
       freight: weBear ? Number(f.freight) || 0 : 0,
       items: f.items.map((i) => ({ ...i, reqQty: Number(i.reqQty) || 0, planQty: Number(i.planQty) || 0 })),
-    });
+    };
+    if (advice) {
+      updateAdvice(advice.id, { ...data, edits: [...(advice.edits || []), { by: user.name, time: new Date().toISOString() }] });
+      return onClose();
+    }
     // bilty is auto-generated with the advice
-    advice && onClose();
+    createAdvice(sub, data) && onClose();
   };
 
   const I = (label, value, onChange, props = {}, span = 1) => (
@@ -125,18 +173,8 @@ function CreateModal({ sub, onClose }) {
   );
 
   return (
-    <Modal title={`Create ${L.advice}`} wide onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={save}>Create Advice</button></>}>
-      <h4>Truck Purpose</h4>
-      <div className="form-grid">
-        <Field label="Purpose of the truck visit *" hint="Set by default for this module; change it if needed">
-          <select value={f.purpose} onChange={(e) => set('purpose', e.target.value)}>
-            <option value="loading">Loading</option>
-            <option value="unloading">Unloading</option>
-          </select>
-        </Field>
-      </div>
-
+    <Modal title={advice ? `Edit ${L.advice} – ${advice.no}` : `Create ${L.advice}`} wide onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={save}>{advice ? 'Save Changes' : 'Create Advice'}</button></>}>
       <h4>1. {L.party} Details</h4>
       <div className="form-grid">
         <Field label={sub === 'purchase' ? 'Fill from PO (Indent)' : 'Fill from Sales Order'} span={2}
@@ -146,7 +184,10 @@ function CreateModal({ sub, onClose }) {
             {sources.map((x) => <option key={x.ref} value={x.ref}>{x.label}</option>)}
           </select>
         </Field>
-        {I(`${L.party} / Party Name *`, f.party, (v) => set('party', v))}
+        {I(`${L.party} / Party Name *`, f.party, (v) => set('party', v), { list: 'advice-parties' })}
+        <datalist id="advice-parties">
+          {(state.vendors || []).filter((v) => v.type === (sub === 'purchase' ? 'Purchase' : 'Sales')).map((v) => <option key={v.id} value={v.name} />)}
+        </datalist>
         {I('A/c Name', f.acName, (v) => set('acName', v))}
         {I('Order / Sales Order Ref *', f.orderRef, (v) => set('orderRef', v))}
         {I('Rate (₹/MT)', f.rate, (v) => set('rate', v), { type: 'number' })}
@@ -170,23 +211,27 @@ function CreateModal({ sub, onClose }) {
         {I(L.from, f.transport.from, (v) => nest('transport', 'from', v))}
         {I(L.to, f.transport.to, (v) => nest('transport', 'to', v))}
         <Field label="Freight Terms (EX / FOR) *" hint={weBear ? 'Freight is on our side – enter the amount below' : 'Freight is paid by the other party – amount is not added to the invoice / Bilty'}>
-          <select value={f.freightTerms} onChange={(e) => set('freightTerms', e.target.value)}>
-            <option value="ex">{termsText(sub, 'ex')}</option>
-            <option value="for">{termsText(sub, 'for')}</option>
+          <select value={f.freightTerms} onChange={(e) => set('freightTerms', e.target.value)} disabled={TERMS[sub].length === 1}>
+            {TERMS[sub].map((t) => <option key={t} value={t}>{termsText(sub, t)}</option>)}
           </select>
         </Field>
         {weBear
           ? I('Freight (₹)', f.freight, (v) => set('freight', v), { type: 'number' })
           : <Field label="Freight (₹)"><input value="Paid by the other party – not required" disabled /></Field>}
-        {I(`Target ${act} time (hours)`, f.targetHours, (v) => set('targetHours', v), { type: 'number', step: '0.5' })}
       </div>
 
       <h4>4. Item-wise {act} Details</h4>
       <table className="tbl mini">
-        <thead><tr><th>Item Description *</th><th>Size</th><th>Grade / Spec</th><th>Required (MT)</th><th>Planned (MT) *</th><th /></tr></thead>
+        <thead><tr><th>Item Master</th><th>Item Description *</th><th>Size</th><th>Grade / Spec</th><th>Required (MT)</th><th>Planned (MT) *</th><th /></tr></thead>
         <tbody>
           {f.items.map((it, i) => (
             <tr key={i}>
+              <td>
+                <select value={master.find((m) => lineIsItem(it, m))?.id || ''} onChange={(e) => pickItem(i, e.target.value)}>
+                  <option value="">— Pick item —</option>
+                  {master.map((m) => <option key={m.id} value={m.id}>{m.code} – {m.name} {m.size}</option>)}
+                </select>
+              </td>
               {['desc', 'size', 'grade', 'reqQty', 'planQty'].map((k) => (
                 <td key={k}><input type={k.endsWith('Qty') ? 'number' : 'text'} value={it[k]} onChange={(e) => setItem(i, k, e.target.value)} /></td>
               ))}
@@ -195,7 +240,7 @@ function CreateModal({ sub, onClose }) {
           ))}
         </tbody>
       </table>
-      <button className="btn sm" onClick={() => set('items', [...f.items, { ...emptyItem }])}>+ Add item</button>
+      <button className="btn sm" onClick={() => set('items', [...f.items, { ...emptyItem }])}><Ico name="add" />Add item</button>
 
       <h4>5. Special Size / Remarks</h4>
       <div className="form-grid">

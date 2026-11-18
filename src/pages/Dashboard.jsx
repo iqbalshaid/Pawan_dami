@@ -2,7 +2,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../store.jsx';
 import { STAGES, SUBSYSTEMS, actOf, moduleAt, slugOf, stageLabel, stagesFor } from '../data.js';
-import { Badge, Empty, fmtDT, plannedTotal } from '../components/ui.jsx';
+import { Badge, Empty, fmtDT, plannedTotal, statusText } from '../components/ui.jsx';
+import { ExportButtons } from '../components/DataIO.jsx';
 
 const ACTION_TEXT = (a) => ({
   CREATED: 'Complete security check and Gate-In', GATED_IN: 'Record 1st weight', TARE_DONE: `Start ${actOf(a)}`,
@@ -23,7 +24,7 @@ const KPI_ICON = {
   total: '🚚', wait: '🚦', inside: '🏭', done: '✅', qty: '⚖️',
 };
 
-function Kpi({ icon, label, value, unit, note, tone }) {
+export function Kpi({ icon, label, value, unit, note, tone }) {
   return (
     <div className={`kpi ${tone || ''}`}>
       <span className="kpi-ic">{icon}</span>
@@ -81,13 +82,6 @@ function Charts({ adv, visibleSubs }) {
     { label: 'Complete (gate-out)', value: done, color: STATUS_COLORS.done },
   ];
 
-  // delay: trucks whose loading/unloading has ended
-  const ended = adv.filter((a) => a.loading?.end);
-  const late = ended.filter((a) => a.loading.delayMin > 0);
-  const onTime = ended.length - late.length;
-  const avgDelay = late.length ? Math.round(late.reduce((s, a) => s + a.loading.delayMin, 0) / late.length) : 0;
-  const pctOn = ended.length ? Math.round((onTime / ended.length) * 100) : 0;
-
   return (
     <div className="chart-cols">
       <div className="card">
@@ -130,23 +124,6 @@ function Charts({ adv, visibleSubs }) {
         )}
       </div>
 
-      <div className="card">
-        <div className="card-title"><h3>Loading / Unloading time</h3><span className="muted">{ended.length} complete</span></div>
-        {ended.length === 0 ? <Empty text="No loading/unloading completed yet." /> : (
-          <>
-            <div className="big-num"><b>{pctOn}%</b><span>trucks completed on time</span></div>
-            <div className="hb-track tall">
-              {onTime > 0 && <i style={{ flex: onTime, background: STATUS_COLORS.done }} title={`On time: ${onTime}`}>{onTime}</i>}
-              {late.length > 0 && <i style={{ flex: late.length, background: '#b91c1c' }} title={`Delay: ${late.length}`}>{late.length}</i>}
-            </div>
-            <Legend items={[
-              { label: 'On time', value: onTime, color: STATUS_COLORS.done },
-              { label: 'Delayed', value: late.length, color: '#b91c1c' },
-            ]} />
-            {late.length > 0 && <p className="muted" style={{ marginTop: 8 }}>Average delay for delayed trucks: <b>{avgDelay} min</b></p>}
-          </>
-        )}
-      </div>
     </div>
   );
 }
@@ -296,7 +273,19 @@ export default function Dashboard() {
       </div>
 
       <div className="card">
-        <div className="card-title"><h3>Trucks inside plant</h3><span className="muted">{inside.length} trucks</span></div>
+        <div className="card-title">
+          <h3>Trucks inside plant</h3>
+          <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="muted">{inside.length} trucks</span>
+            <ExportButtons
+              title="Trucks inside plant" filename="trucks-inside" rows={inside}
+              columns={[
+                ['Truck', (a) => a.transport.vehicle], ['Advice', (a) => a.no], ['Party', (a) => a.party], ['Route', (a) => `${a.transport.from} -> ${a.transport.to}`],
+                ['Status', statusText], ['Inside for', (a) => (a.gateIn ? ago(a.gateIn.time) : '')],
+              ]}
+            />
+          </span>
+        </div>
         {inside.length === 0 ? <Empty text="No trucks inside the plant." /> : (
           <table className="tbl">
             <thead><tr><th>Truck</th><th>Advice</th><th>Party</th><th>Route</th><th>Status</th><th>Inside for</th></tr></thead>

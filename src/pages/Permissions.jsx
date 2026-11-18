@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Ico from '../components/Icon.jsx';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '../store.jsx';
 import { ROLES, SUBSYSTEMS, altsOf, modulesFor, nameOf } from '../data.js';
@@ -56,7 +57,7 @@ export default function Permissions() {
         sub={`${ROLES[target.role]}. Tick View / Action for the Sales / Purchase pages this user should get. Other pages will not appear in this user's sidebar. Alternative users = when this user is unavailable, they (one or more) can do this page's work.`}
         right={
           <button className="btn" onClick={() => confirm('Reset all settings (user permissions and demo data) to default? Advices you created will also be removed.') && resetDemo()}>
-            Sync setting
+            <Ico name="sync" />Sync setting
           </button>
         }
       />
@@ -91,8 +92,8 @@ export default function Permissions() {
                     <span>{seen} of {mods.length} pages visible</span>
                   </div>
                   <span className={`pstatus ${statusCls}`}>{statusText}</span>
-                  <button className="btn sm danger" onClick={(e) => { e.stopPropagation(); setAllPerms(target.id, keys, false); }}>Revoke</button>
-                  <button className="btn sm" onClick={(e) => { e.stopPropagation(); setAllPerms(target.id, keys, true); }}>Grant</button>
+                  <button className="btn sm danger" onClick={(e) => { e.stopPropagation(); setAllPerms(target.id, keys, false); }}><Ico name="reject" />Revoke</button>
+                  <button className="btn sm" onClick={(e) => { e.stopPropagation(); setAllPerms(target.id, keys, true); }}><Ico name="approve" />Grant</button>
                 </div>
 
                 {isOpen && (

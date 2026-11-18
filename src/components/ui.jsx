@@ -27,10 +27,12 @@ export const materialText = (a) =>
 
 // TARE_DONE's label depends on this specific truck's purpose (loading vs unloading),
 // not the subsystem, so Badge takes the whole advice rather than just stage+type.
+/** The status words a Badge shows – also used for CSV / PDF exports. */
+export const statusText = (a) => (a.stage === 'TARE_DONE' ? actOf(a) : stageLabel(a.stage, a.type));
+
 export function Badge({ a }) {
   const s = STAGES[a.stage];
-  const label = a.stage === 'TARE_DONE' ? actOf(a) : stageLabel(a.stage, a.type);
-  return <span className={`badge ${s.tone}`}>{label}</span>;
+  return <span className={`badge ${s.tone}`}>{statusText(a)}</span>;
 }
 
 export function Modal({ title, onClose, children, wide, footer }) {
@@ -105,7 +107,7 @@ const Row = ({ k, v }) => (
 );
 
 /** Read-only detail of an advice – used inside all modals */
-export function AdviceSummary({ a, compact }) {
+export function AdviceSummary({ a, compact, hideItems }) {
   const L = labelsFor(a.type);
   const act = actOf(a);
   const total = plannedTotal(a);
@@ -133,13 +135,13 @@ export function AdviceSummary({ a, compact }) {
         <Row k="Driver" v={[a.transport.driver, a.transport.mobile].filter(Boolean).join(' · ')} />
         <Row k="Required Qty" v={a.reqQty ? `${a.reqQty} MT` : ''} />
         <Row k={`Planned ${act} Qty`} v={total ? `${total} MT` : ''} />
-        <Row k="Target Time" v={a.targetHours ? `${a.targetHours} hours` : ''} />
         <Row k="Bilty / LR No." v={biltyOf(a) || biltyPending(a)} />
         <Row k="Freight Terms" v={`${termsText(a.type, termsOf(a))}${weBearFreight(a) && a.freight ? ` · ₹ ${Number(a.freight).toLocaleString('en-IN')}` : ''}`} />
         <Row k="Billing Party" v={a.billingInfo?.party} />
         <Row k="GST No." v={a.billingInfo?.gst} />
       </div>
 
+      {!hideItems && <>
       <h4>Material to {act === 'Loading' ? 'load' : 'unload'}</h4>
       <table className="tbl mini">
         <thead><tr><th>Item</th><th>Size</th><th>Grade</th><th>Req (MT)</th><th>Plan (MT)</th>{hasLoadQty(a) && <th>{act === 'Loading' ? 'Loaded' : 'Unloaded'} (MT)</th>}</tr></thead>
@@ -152,6 +154,7 @@ export function AdviceSummary({ a, compact }) {
           ))}
         </tbody>
       </table>
+      </>}
 
       {!compact && (
         <>
@@ -177,7 +180,7 @@ export function Timeline({ a }) {
     { t: `Advice (${a.no}) created`, time: a.date, by: '', done: true },
     { t: `Verification – Gate-In${a.type === 'purchase' && a.gateIn?.biltyNo ? ` · Bilty ${a.gateIn.biltyNo}` : ''}`, time: a.gateIn?.time, by: a.gateIn?.by, done: !!a.gateIn },
     { t: `1st Weighment (${a.type === 'purchase' ? 'loaded vehicle' : 'empty vehicle'}) – ${wtText(a.tare)}`, time: a.tare?.time, by: a.tare?.by, note: a.tare?.remark, img: a.tare?.photo, done: !!a.tare },
-    { t: `${act} ${a.loading?.end ? `(${fmtDT(a.loading.start)} → ${fmtDT(a.loading.end)})` : a.loading?.start ? `(started ${fmtDT(a.loading.start)}, in progress)` : ''}`, time: a.loading?.end, by: a.loading?.endBy || a.loading?.by, note: a.loading?.delayMin > 0 ? `Delay ${a.loading.delayMin} min – ${a.loading.delayReason}` : '', red: a.loading?.delayMin > 0, done: !!a.loading?.end },
+    { t: `${act}${a.loading?.end ? ` – ${loadedTotal(a)} MT` : ''}`, time: a.loading?.end, by: a.loading?.endBy || a.loading?.by, note: a.loading?.changeNote || '', done: !!a.loading?.end },
     { t: `Final Weighment (${a.type === 'purchase' ? 'empty vehicle' : 'loaded vehicle'}) – ${wtText(a.final)}${net != null ? ` · Net ${kg(net)}` : ''}`, time: a.final?.time, by: a.final?.by, note: a.final?.remark, img: a.final?.photo, done: !!a.final },
     ...(a.type === 'purchase'
       ? [
